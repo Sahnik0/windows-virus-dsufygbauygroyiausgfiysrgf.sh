@@ -68,7 +68,8 @@ async function authenticatePendingToken(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+    const pendingSecret = process.env.JWT_PENDING_SECRET || process.env.JWT_ACCESS_SECRET;
+    const decoded = jwt.verify(token, pendingSecret);
     if (decoded.type !== 'pending_upload') {
       return res.status(401).json({ message: 'Invalid token type for registration upload' });
     }
