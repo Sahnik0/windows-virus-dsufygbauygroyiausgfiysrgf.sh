@@ -19,7 +19,12 @@ router.post(
   ridesController.createRide
 );
 
-// 2. Search for available published rides
+// 2. List caller's published ride offers with active negotiations & join requests
+router.get(
+  '/my-offers',
+  authenticateToken,
+  ridesController.getMyOfferedRides
+);
 router.post(
   '/search',
   authenticateToken,

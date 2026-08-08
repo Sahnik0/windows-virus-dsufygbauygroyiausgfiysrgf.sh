@@ -70,7 +70,34 @@ class RidesService {
     });
   }
 
-  // Searches for available published rides within caller's organization
+  // Lists published ride offers created by caller with active negotiations and join requests
+  async getMyOfferedRides(currentUser) {
+    return await prisma.ride.findMany({
+      where: {
+        driverId: currentUser.id,
+        status: { in: ['SCHEDULED', 'ACTIVE'] },
+      },
+      include: {
+        vehicle: true,
+        negotiations: {
+          where: { status: 'OPEN' },
+          include: {
+            passenger: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            offers: { orderBy: { createdAt: 'desc' } },
+          },
+          orderBy: { updatedAt: 'desc' },
+        },
+        joinRequests: {
+          where: { status: 'PENDING' },
+          include: {
+            passenger: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      orderBy: { departureAt: 'desc' },
+    });
+  }
   async searchRides(currentUser, {
     pickupLat,
     pickupLng,

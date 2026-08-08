@@ -12,7 +12,15 @@ class RidesController {
     }
   }
 
-  // Searches for available published rides
+  // Lists published ride offers created by caller with active negotiations and join requests
+  async getMyOfferedRides(req, res, next) {
+    try {
+      const result = await ridesService.getMyOfferedRides(req.user);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
   async searchRides(req, res, next) {
     try {
       const result = await ridesService.searchRides(req.user, req.body);
