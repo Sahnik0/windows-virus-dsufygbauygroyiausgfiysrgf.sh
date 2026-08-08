@@ -107,7 +107,10 @@ class RidesService {
     departureTime,
     seatsNeeded = 1,
     isRecurring,
+    radiusKm = 1.0,
   }) {
+    const radius = Number(radiusKm) || 1.0;
+
     const where = {
       status: { in: ['SCHEDULED', 'ACTIVE'] },
       availableSeats: { gte: seatsNeeded },
@@ -136,7 +139,15 @@ class RidesService {
       }
     }
 
-    const rides = await prisma.ride.findMany({
+    // Pre-filter bounding box if pickup coords provided
+    if (pickupLat != null && pickupLng != null) {
+      const latDelta = radius / 111.0;
+      const lngDelta = radius / (111.0 * Math.cos((pickupLat * Math.PI) / 180));
+      where.pickupLat = { gte: pickupLat - latDelta, lte: pickupLat + latDelta };
+      where.pickupLng = { gte: pickupLng - lngDelta, lte: pickupLng + lngDelta };
+    }
+
+    const candidateRides = await prisma.ride.findMany({
       where,
       include: {
         vehicle: true,
@@ -147,18 +158,39 @@ class RidesService {
       orderBy: { departureAt: 'asc' },
     });
 
-    const routeInfo = await getRoute(
-      { lat: pickupLat, lng: pickupLng },
-      { lat: destinationLat, lng: destinationLng }
-    );
+    // Strict AND filtering: BOTH Pickup AND Destination MUST be within radiusKm
+    const filteredRides = candidateRides.filter(r => {
+      let matchesPickup = true;
+      let matchesDestination = true;
+
+      if (pickupLat != null && pickupLng != null && r.pickupLat != null && r.pickupLng != null) {
+        const pickupDist = haversineDistance(pickupLat, pickupLng, r.pickupLat, r.pickupLng);
+        matchesPickup = pickupDist <= radius;
+      }
+
+      if (destinationLat != null && destinationLng != null && r.destinationLat != null && r.destinationLng != null) {
+        const destDist = haversineDistance(destinationLat, destinationLng, r.destinationLat, r.destinationLng);
+        matchesDestination = destDist <= radius;
+      }
+
+      // BOTH MUST BE TRUE (AND)
+      return matchesPickup && matchesDestination;
+    });
+
+    const routeInfo = (pickupLat != null && destinationLat != null)
+      ? await getRoute(
+          { lat: pickupLat, lng: pickupLng },
+          { lat: destinationLat, lng: destinationLng }
+        )
+      : null;
 
     return {
       searchRoute: routeInfo,
-      rides: rides.map(r => ({
+      rides: filteredRides.map(r => ({
         ...r,
         driver: {
           ...r.driver,
-          rating: r.driver.rating || 4.9, // Default rating if null
+          rating: r.driver.rating || 4.9,
         }
       })),
     };
