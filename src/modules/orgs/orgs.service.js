@@ -43,6 +43,25 @@ class OrgsService {
     }));
   }
 
+  // Lists all ACTIVE organizations for public registration dropdown (unauthenticated)
+  async getActiveOrgsPublic() {
+    const orgs = await prisma.org.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return orgs.map((org) => ({
+      id: org.id,
+      name: org.name,
+      slug: org.slug || org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+    }));
+  }
+
   // Gets single organization details by ID or slug
   async getOrgById(orgId) {
     const org = await prisma.org.findFirst({

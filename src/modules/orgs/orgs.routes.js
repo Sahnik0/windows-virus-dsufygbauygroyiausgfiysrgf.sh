@@ -12,6 +12,9 @@ const {
 
 const router = express.Router();
 
+// Public route: List active organizations for registration dropdown (unauthenticated)
+router.get('/public', orgsController.getActiveOrgsPublic);
+
 // 1. Create new organization (SUPER_ADMIN only)
 router.post(
   '/',
