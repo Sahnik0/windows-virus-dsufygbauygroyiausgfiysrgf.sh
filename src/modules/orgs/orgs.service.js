@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 // Service class containing business logic for Organization operations
 class OrgsService {
   // Creates a new organization record (SUPER_ADMIN only)
-  async createOrg({ name, slug, status = 'ACTIVE', fuelCostPerLitre, costPerKmDefault }) {
+  async createOrg({ name, slug, status = 'ACTIVE' }) {
     const rawSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     let finalSlug = rawSlug;
 
@@ -19,8 +19,6 @@ class OrgsService {
         name,
         slug: finalSlug,
         status,
-        ...(fuelCostPerLitre !== undefined && { fuelCostPerLitre: Number(fuelCostPerLitre) }),
-        ...(costPerKmDefault !== undefined && { costPerKmDefault: Number(costPerKmDefault) }),
       },
     });
   }
@@ -85,7 +83,7 @@ class OrgsService {
     };
   }
 
-  // Updates organization details (name, slug, status, fuelCostPerLitre, costPerKmDefault)
+  // Updates organization details (name, slug, status, settings)
   async updateOrg(currentUser, targetOrgId, data) {
     if (currentUser.role === 'ORG_ADMIN' && currentUser.orgId !== targetOrgId) {
       const error = new Error('Forbidden: Cannot update settings for another organization');
@@ -104,8 +102,6 @@ class OrgsService {
       name,
       slug,
       status,
-      fuelCostPerLitre,
-      costPerKmDefault,
       subsidyPercent,
       baseRideCharge,
       maxRidersPerCarpool,
@@ -127,8 +123,6 @@ class OrgsService {
         ...(name !== undefined && { name }),
         ...(finalSlug !== undefined && { slug: finalSlug }),
         ...(status !== undefined && { status }),
-        ...(fuelCostPerLitre !== undefined && { fuelCostPerLitre: Number(fuelCostPerLitre) }),
-        ...(costPerKmDefault !== undefined && { costPerKmDefault: Number(costPerKmDefault) }),
         ...(subsidyPercent !== undefined && { subsidyPercent: Number(subsidyPercent) }),
         ...(baseRideCharge !== undefined && { baseRideCharge: Number(baseRideCharge) }),
         ...(maxRidersPerCarpool !== undefined && { maxRidersPerCarpool: Number(maxRidersPerCarpool) }),
@@ -279,7 +273,7 @@ class OrgsService {
     });
   }
 
-  // Updates fuel cost per litre, cost per km, or settings for an organization
+  // Updates settings for an organization
   async updateOrgSettings(currentUser, targetOrgId, data) {
     return await this.updateOrg(currentUser, targetOrgId, data);
   }

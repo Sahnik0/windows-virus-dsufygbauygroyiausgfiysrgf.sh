@@ -180,7 +180,7 @@ async function runE2ETests() {
     });
     console.assert(fuelRes.status === 200, 'Fuel report succeeds');
     const fuelData = await fuelRes.json();
-    console.assert(typeof fuelData.estimatedTotalFuelCost === 'number', 'Fuel cost formatted as number');
+    console.assert(typeof fuelData.estimatedFuelLitres === 'number', 'Estimated fuel litres formatted as number');
     console.log('✅ Fuel report precision passed');
 
     const vehCostRes = await fetch(`${baseUrl}/reports/vehicle-cost?orgId=${testOrg.id}`, {

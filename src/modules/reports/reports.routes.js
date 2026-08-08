@@ -21,15 +21,7 @@ router.get(
   reportsController.getFuelReport
 );
 
-// 3. Get organization cost per km report (ORG_ADMIN / SUPER_ADMIN)
-router.get(
-  '/cost-per-km',
-  authenticateToken,
-  requireRole('ORG_ADMIN', 'SUPER_ADMIN'),
-  reportsController.getCostPerKmReport
-);
-
-// 4. Get per-vehicle cost report (ORG_ADMIN / SUPER_ADMIN)
+// 3. Get per-vehicle cost report (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/vehicle-cost',
   authenticateToken,

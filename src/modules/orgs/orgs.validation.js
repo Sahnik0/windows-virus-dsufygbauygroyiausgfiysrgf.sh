@@ -15,8 +15,6 @@ const createOrgSchema = z.object({
   name: z.string().min(1, 'Organization name is required'),
   slug: z.string().optional(),
   status: statusEnum.optional().default('ACTIVE'),
-  fuelCostPerLitre: z.number().positive().optional(),
-  costPerKmDefault: z.number().positive().optional(),
 });
 
 // Input validation schema for updating an organization
@@ -24,8 +22,6 @@ const updateOrgSchema = z.object({
   name: z.string().min(1).optional(),
   slug: z.string().optional(),
   status: statusEnum.optional(),
-  fuelCostPerLitre: z.number().positive().optional(),
-  costPerKmDefault: z.number().positive().optional(),
   subsidyPercent: z.number().min(0).max(100).optional(),
   baseRideCharge: z.number().min(0).optional(),
   maxRidersPerCarpool: z.number().int().min(1).optional(),
@@ -44,8 +40,6 @@ const provisionOrgAdminSchema = z.object({
 
 // Input validation schema for updating organization settings
 const updateOrgSettingsSchema = z.object({
-  fuelCostPerLitre: z.number().positive().optional(),
-  costPerKmDefault: z.number().positive().optional(),
   subsidyPercent: z.number().min(0).max(100).optional(),
   baseRideCharge: z.number().min(0).optional(),
   maxRidersPerCarpool: z.number().int().min(1).optional(),

@@ -1,19 +1,18 @@
 const prisma = require('../../config/prisma');
 
-// Constant for assumed vehicle fuel efficiency: 15 kilometers per litre
-const ASSUMED_KM_PER_LITRE = 15.0;
+const ASSUMED_KM_PER_LITRE = 15; // Benchmark 15 km per litre efficiency
 
-// Service class containing business logic for administrative reporting & analytics
+// Service class containing business logic for analytical reports
 class ReportsService {
-  // Helper method to derive target organization ID with strict ORG_ADMIN isolation
+  // Helper to resolve orgId based on user role and query params
   _getOrgId(currentUser, filterOrgId) {
     if (currentUser.role === 'ORG_ADMIN') {
       return currentUser.orgId;
     }
-    return filterOrgId || currentUser.orgId;
+    return filterOrgId || null;
   }
 
-  // Summary Report: Returns total completed trips and total distance within an optional date range
+  // Summary Report: Returns total trips and total distance for specified org
   async getSummaryReport(currentUser, filterOrgId, startDate, endDate) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {
@@ -22,13 +21,10 @@ class ReportsService {
       throw error;
     }
 
-    const where = {
-      status: { in: ['TRIP_COMPLETED', 'PAYMENT_PENDING', 'PAYMENT_COMPLETED'] },
-      ride: { orgId },
-    };
+    const where = { orgId };
 
     if (startDate || endDate) {
-      where.completedAt = {};
+      where.createdAt = {};
       if (startDate) {
         const start = new Date(startDate);
         if (isNaN(start.getTime())) {
@@ -36,7 +32,7 @@ class ReportsService {
           error.statusCode = 400;
           throw error;
         }
-        where.completedAt.gte = start;
+        where.createdAt.gte = start;
       }
       if (endDate) {
         const end = new Date(endDate);
@@ -45,20 +41,25 @@ class ReportsService {
           error.statusCode = 400;
           throw error;
         }
-        where.completedAt.lte = end;
+        where.createdAt.lte = end;
       }
     }
 
-    const trips = await prisma.trip.findMany({
-      where,
-      include: {
-        ride: { select: { routeDistanceKm: true } },
+    const completedRides = await prisma.ride.findMany({
+      where: {
+        ...where,
+        trip: {
+          status: 'COMPLETED',
+        },
+      },
+      select: {
+        routeDistanceKm: true,
       },
     });
 
-    const totalTrips = trips.length;
+    const totalTrips = completedRides.length;
     const totalDistanceKm = parseFloat(
-      trips.reduce((sum, t) => sum + (t.ride.routeDistanceKm || 0), 0).toFixed(2)
+      completedRides.reduce((sum, ride) => sum + (ride.routeDistanceKm || 0), 0).toFixed(2)
     );
 
     return {
@@ -69,7 +70,7 @@ class ReportsService {
     };
   }
 
-  // Fuel Report: Calculates estimated fuel consumption (litres) and total cost using org.fuelCostPerLitre
+  // Fuel Report: Calculates estimated fuel consumption (litres)
   async getFuelReport(currentUser, filterOrgId, startDate, endDate) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {
@@ -86,54 +87,19 @@ class ReportsService {
     }
 
     const summary = await this.getSummaryReport(currentUser, filterOrgId, startDate, endDate);
-    const fuelCostPerLitre = Number(org.fuelCostPerLitre);
-
     const rawLitres = summary.totalDistanceKm / ASSUMED_KM_PER_LITRE;
     const estimatedFuelLitres = parseFloat(rawLitres.toFixed(2));
-    const estimatedTotalFuelCost = parseFloat((rawLitres * fuelCostPerLitre).toFixed(2));
 
     return {
       orgId,
       orgName: org.name,
       totalDistanceKm: summary.totalDistanceKm,
       assumedKmPerLitre: ASSUMED_KM_PER_LITRE,
-      fuelCostPerLitre,
       estimatedFuelLitres,
-      estimatedTotalFuelCost,
     };
   }
 
-  // Cost Per Km Report: Returns org default costPerKm and calculated derived fuel cost per km
-  async getCostPerKmReport(currentUser, filterOrgId) {
-    const orgId = this._getOrgId(currentUser, filterOrgId);
-    if (!orgId) {
-      const error = new Error('Organization ID is required');
-      error.statusCode = 400;
-      throw error;
-    }
-    const org = await prisma.org.findUnique({ where: { id: orgId } });
-
-    if (!org) {
-      const error = new Error('Organization not found');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    const fuelCostPerLitre = Number(org.fuelCostPerLitre);
-    const costPerKmDefault = Number(org.costPerKmDefault);
-    const derivedFuelCostPerKm = parseFloat((fuelCostPerLitre / ASSUMED_KM_PER_LITRE).toFixed(2));
-
-    return {
-      orgId,
-      orgName: org.name,
-      costPerKmDefault,
-      derivedFuelCostPerKm,
-      fuelCostPerLitre,
-      assumedKmPerLitre: ASSUMED_KM_PER_LITRE,
-    };
-  }
-
-  // Vehicle Cost Report: Returns per-vehicle breakdown of completed trips, total distance, and fuel cost
+  // Vehicle Cost Report: Returns per-vehicle breakdown of completed trips and total distance
   async getVehicleCostReport(currentUser, filterOrgId) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {
@@ -149,8 +115,6 @@ class ReportsService {
       throw error;
     }
 
-    const fuelCostPerLitre = Number(org.fuelCostPerLitre);
-
     const vehicles = await prisma.vehicle.findMany({
       where: { owner: { orgId } },
       include: {
@@ -159,7 +123,7 @@ class ReportsService {
           where: {
             orgId,
             trip: {
-              status: { in: ['TRIP_COMPLETED', 'PAYMENT_PENDING', 'PAYMENT_COMPLETED'] },
+              status: 'COMPLETED',
             },
           },
           select: { routeDistanceKm: true },
@@ -174,25 +138,19 @@ class ReportsService {
       );
       const rawLitres = totalDistanceKm / ASSUMED_KM_PER_LITRE;
       const estimatedFuelLitres = parseFloat(rawLitres.toFixed(2));
-      const estimatedFuelCost = parseFloat((rawLitres * fuelCostPerLitre).toFixed(2));
 
       return {
         vehicleId: v.id,
         model: v.model,
         registrationNumber: v.registrationNumber,
-        owner: v.owner,
+        driverName: `${v.owner.firstName} ${v.owner.lastName}`.trim(),
         totalTrips,
         totalDistanceKm,
         estimatedFuelLitres,
-        estimatedFuelCost,
       };
     });
 
-    return {
-      orgId,
-      orgName: org.name,
-      vehicles: report,
-    };
+    return report;
   }
 }
 

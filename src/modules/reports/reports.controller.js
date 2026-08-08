@@ -13,22 +13,11 @@ class ReportsController {
     }
   }
 
-  // Handles fuel report requests (estimated fuel litres and total fuel cost)
+  // Handles fuel report requests (estimated fuel litres)
   async getFuelReport(req, res, next) {
     try {
       const { orgId, startDate, endDate } = req.query;
       const result = await reportsService.getFuelReport(req.user, orgId, startDate, endDate);
-      res.status(200).json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // Handles cost per km report requests
-  async getCostPerKmReport(req, res, next) {
-    try {
-      const { orgId } = req.query;
-      const result = await reportsService.getCostPerKmReport(req.user, orgId);
       res.status(200).json(result);
     } catch (error) {
       next(error);

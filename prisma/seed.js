@@ -3,14 +3,12 @@ const bcrypt = require('bcrypt');
 
 const prisma = new PrismaClient();
 
-// Database seed script for initializing test organizations, admin accounts, drivers, and vehicles
 async function main() {
-  console.log('Seeding database...');
+  console.log('🌱 Starting Database Seeding...');
 
-  // Hash standard test password 'Password123!' with bcrypt cost factor 10
   const defaultPasswordHash = await bcrypt.hash('Password123!', 10);
 
-  // 1. Create default Super Admin (platform-wide admin, no org, verificationStatus APPROVED)
+  // 1. Create Super Admin User (role SUPER_ADMIN, verificationStatus APPROVED)
   const superAdmin = await prisma.user.upsert({
     where: { email: 'superadmin@platform.com' },
     update: {},
@@ -20,10 +18,16 @@ async function main() {
       firstName: 'Super',
       lastName: 'Admin',
       phone: '+10000000000',
-      employeeId: 'EMP-0000',
       role: 'SUPER_ADMIN',
-      orgId: null,
       verificationStatus: 'APPROVED',
+      org: {
+        create: {
+          id: 'platform-org-id',
+          name: 'Platform Core Admin Org',
+          slug: 'platform-core-admin',
+          status: 'ACTIVE',
+        },
+      },
     },
   });
   console.log(`Created/Verified Super Admin: ${superAdmin.email}`);
@@ -39,8 +43,6 @@ async function main() {
       name: 'Acme Corporation',
       slug: 'acme-corporation',
       status: 'ACTIVE',
-      fuelCostPerLitre: 100.0,
-      costPerKmDefault: 15.0,
     },
   });
   console.log(`Created/Verified Org: ${acmeOrg.name}`);
@@ -63,62 +65,51 @@ async function main() {
   });
   console.log(`Created/Verified Org Admin: ${orgAdmin.email}`);
 
-  // 4. Create Driver and Passenger users in Acme Org (verificationStatus APPROVED)
-  const user1 = await prisma.user.upsert({
-    where: { email: 'driver@acme.com' },
-    update: { rating: 4.9 },
+  // 4. Create Approved Regular Employee User
+  const regularUser = await prisma.user.upsert({
+    where: { email: 'john.doe@acme.com' },
+    update: {},
     create: {
-      email: 'driver@acme.com',
+      email: 'john.doe@acme.com',
       passwordHash: defaultPasswordHash,
-      firstName: 'Driver',
-      lastName: 'User',
+      firstName: 'John',
+      lastName: 'Doe',
       phone: '+10000000002',
-      employeeId: 'EMP-1001',
-      rating: 4.9,
+      employeeId: 'EMP-9842',
       role: 'USER',
       orgId: acmeOrg.id,
       verificationStatus: 'APPROVED',
+      wallet: {
+        create: {
+          balance: 1000.0,
+        },
+      },
     },
   });
+  console.log(`Created/Verified Regular User: ${regularUser.email}`);
 
-  const user2 = await prisma.user.upsert({
-    where: { email: 'passenger@acme.com' },
+  // 5. Create Driver Vehicle for John Doe
+  const vehicle = await prisma.vehicle.upsert({
+    where: { id: 'acme-demo-vehicle-id' },
     update: {},
     create: {
-      email: 'passenger@acme.com',
-      passwordHash: defaultPasswordHash,
-      firstName: 'Passenger',
-      lastName: 'User',
-      phone: '+10000000003',
-      employeeId: 'EMP-1002',
-      role: 'USER',
-      orgId: acmeOrg.id,
-      verificationStatus: 'APPROVED',
-    },
-  });
-  console.log(`Created/Verified Users: ${user1.email}, ${user2.email}`);
-
-  // 5. Create Vehicle owned by driver user
-  const vehicle1 = await prisma.vehicle.upsert({
-    where: { registrationNumber: 'KA-01-AB-1234' },
-    update: {},
-    create: {
-      model: 'Toyota Prius',
-      registrationNumber: 'KA-01-AB-1234',
+      id: 'acme-demo-vehicle-id',
+      model: 'Tesla Model Y',
+      registrationNumber: 'CA-EX-9988',
       seatingCapacity: 4,
-      fuelType: 'HYBRID',
+      fuelType: 'ELECTRIC',
       status: 'VERIFIED',
-      ownerId: user1.id,
+      ownerId: regularUser.id,
     },
   });
-  console.log(`Created/Verified Vehicle: ${vehicle1.registrationNumber} owned by ${user1.email}`);
+  console.log(`Created/Verified Driver Vehicle: ${vehicle.model} (${vehicle.registrationNumber})`);
 
-  console.log('Seeding completed successfully!');
+  console.log('✅ Seeding completed successfully!');
 }
 
 main()
   .catch((e) => {
-    console.error('Seeding error:', e);
+    console.error('❌ Seeding failed:', e);
     process.exit(1);
   })
   .finally(async () => {
