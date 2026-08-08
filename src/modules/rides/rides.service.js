@@ -82,10 +82,13 @@ class RidesService {
     isRecurring,
   }) {
     const where = {
-      orgId: currentUser.orgId,
       status: { in: ['SCHEDULED', 'ACTIVE'] },
       availableSeats: { gte: seatsNeeded },
     };
+
+    if (currentUser.orgId) {
+      where.orgId = currentUser.orgId;
+    }
 
     if (isRecurring !== undefined) {
       where.isRecurring = isRecurring;
@@ -154,12 +157,17 @@ class RidesService {
     const latDelta = radiusKm / 111.0;
     const lngDelta = radiusKm / (111.0 * Math.cos((ride.pickupLat * Math.PI) / 180));
 
+    const where = {
+      latitude: { gte: ride.pickupLat - latDelta, lte: ride.pickupLat + latDelta },
+      longitude: { gte: ride.pickupLng - lngDelta, lte: ride.pickupLng + lngDelta },
+    };
+
+    if (currentUser.orgId) {
+      where.user = { orgId: currentUser.orgId };
+    }
+
     const candidatePlaces = await prisma.savedPlace.findMany({
-      where: {
-        user: { orgId: currentUser.orgId },
-        latitude: { gte: ride.pickupLat - latDelta, lte: ride.pickupLat + latDelta },
-        longitude: { gte: ride.pickupLng - lngDelta, lte: ride.pickupLng + lngDelta },
-      },
+      where,
       include: {
         user: {
           select: { id: true, firstName: true, lastName: true, phone: true },
@@ -184,13 +192,18 @@ class RidesService {
     const latDelta = radiusKm / 111.0;
     const lngDelta = radiusKm / (111.0 * Math.cos((pickupLat * Math.PI) / 180));
 
+    const where = {
+      status: { in: ['SCHEDULED', 'ACTIVE'] },
+      pickupLat: { gte: pickupLat - latDelta, lte: pickupLat + latDelta },
+      pickupLng: { gte: pickupLng - lngDelta, lte: pickupLng + lngDelta },
+    };
+
+    if (currentUser.orgId) {
+      where.orgId = currentUser.orgId;
+    }
+
     const candidateRides = await prisma.ride.findMany({
-      where: {
-        orgId: currentUser.orgId,
-        status: { in: ['SCHEDULED', 'ACTIVE'] },
-        pickupLat: { gte: pickupLat - latDelta, lte: pickupLat + latDelta },
-        pickupLng: { gte: pickupLng - lngDelta, lte: pickupLng + lngDelta },
-      },
+      where,
       include: {
         vehicle: true,
         driver: {
@@ -223,7 +236,7 @@ class RidesService {
       throw error;
     }
 
-    if (currentUser.role !== 'SUPER_ADMIN' && ride.orgId !== currentUser.orgId) {
+    if (currentUser.role !== 'SUPER_ADMIN' && currentUser.orgId && ride.orgId !== currentUser.orgId) {
       const error = new Error('Forbidden: Ride belongs to another organization');
       error.statusCode = 403;
       throw error;
@@ -242,7 +255,7 @@ class RidesService {
       throw error;
     }
 
-    if (ride.orgId !== currentUser.orgId) {
+    if (currentUser.role !== 'SUPER_ADMIN' && currentUser.orgId && ride.orgId !== currentUser.orgId) {
       const error = new Error('Forbidden: Ride belongs to another organization');
       error.statusCode = 403;
       throw error;

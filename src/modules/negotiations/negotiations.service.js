@@ -14,7 +14,7 @@ class NegotiationsService {
       throw error;
     }
 
-    if (ride.orgId !== currentUser.orgId) {
+    if (currentUser.role !== 'SUPER_ADMIN' && currentUser.orgId && ride.orgId !== currentUser.orgId) {
       const error = new Error('Forbidden: Ride belongs to another organization');
       error.statusCode = 403;
       throw error;
