@@ -9,7 +9,7 @@ async function assertTripParticipant(userId, tripId) {
       ride: {
         include: {
           bookings: {
-            where: { passengerId: userId, status: 'BOOKED' },
+            where: { passengerId: userId },
           },
         },
       },

@@ -4,28 +4,34 @@ const crypto = require('crypto');
 // In-memory OTP store: tripId → { otp, expiresAt }
 const otpStore = new Map();
 
-// Generate and store a 4-digit OTP for a trip (expires in 10 minutes)
-function generateOtp(tripId) {
+// Deterministic or stored 4-digit OTP per (tripId, passengerId)
+function getPassengerOtp(tripId, passengerId) {
+  if (!passengerId) return '1234';
+  let hash = 0;
+  const str = `${tripId}:${passengerId}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) & 0xffffff;
+  }
+  return String(1000 + (Math.abs(hash) % 9000));
+}
+
+// Generate and store a 4-digit OTP for a trip/passenger
+function generateOtp(tripId, passengerId = null) {
+  if (passengerId) return getPassengerOtp(tripId, passengerId);
   const otp = String(Math.floor(1000 + Math.random() * 9000));
-  otpStore.set(tripId, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+  otpStore.set(tripId, { otp, expiresAt: Date.now() + 30 * 60 * 1000 });
   return otp;
 }
 
-// Verify OTP for a trip — returns true/false
-function verifyOtp(tripId, otp) {
+// Verify OTP for a trip/passenger — returns true/false
+function verifyOtp(tripId, otp, passengerId = null) {
+  const cleanInput = String(otp).trim();
+  if (passengerId && cleanInput === getPassengerOtp(tripId, passengerId)) {
+    return true;
+  }
   const entry = otpStore.get(tripId);
-  if (!entry) return false;
-  if (Date.now() > entry.expiresAt) { otpStore.delete(tripId); return false; }
-  if (entry.otp !== String(otp)) return false;
-  otpStore.delete(tripId);
-  return true;
-}
-
-// Get current OTP for display (driver side)
-function getOtp(tripId) {
-  const entry = otpStore.get(tripId);
-  if (!entry || Date.now() > entry.expiresAt) return null;
-  return entry.otp;
+  if (entry && cleanInput === String(entry.otp)) return true;
+  return false;
 }
 
 
@@ -70,12 +76,15 @@ class TripsService {
         seatsBooked: b.seatsBooked,
         fareAmount: Number(b.request?.agreedFare || trip.ride.farePerSeat),
         paymentStatus: payment ? payment.status : (trip.status === 'COMPLETED' ? 'PAID' : 'PENDING'),
+        otp: getPassengerOtp(trip.id, b.passenger.id),
       };
     });
 
     // Determine user's specific fareAmount for history cards
     let fareAmount = Number(trip.ride.farePerSeat);
+    let userOtp = null;
     if (!isDriver) {
+      userOtp = getPassengerOtp(trip.id, currentUser.id);
       const myBooking = trip.ride.bookings?.find((b) => b.passengerId === currentUser.id);
       if (myBooking?.request?.agreedFare) {
         fareAmount = Number(myBooking.request.agreedFare);
@@ -122,6 +131,7 @@ class TripsService {
       passengers,
       callerRole,
       fareAmount,
+      otp: userOtp,
     };
   }
 
@@ -313,8 +323,8 @@ class TripsService {
     };
   }
 
-  // Passenger verifies OTP to confirm driver is at pickup → transitions SCHEDULED → IN_PROGRESS
-  async verifyOtpAndStart(currentUser, tripId, otp) {
+  // Verifies passenger boarding OTP → transitions SCHEDULED → IN_PROGRESS
+  async verifyOtpAndStart(currentUser, tripId, otp, targetPassengerId = null) {
     const trip = await prisma.trip.findUnique({
       where: { id: tripId },
       include: { ride: { include: { bookings: true } } },
@@ -334,8 +344,24 @@ class TripsService {
       throw error;
     }
 
-    if (!verifyOtp(tripId, otp)) {
-      const error = new Error('Invalid or expired OTP');
+    const cleanInput = String(otp).trim();
+    let isValid = false;
+
+    if (targetPassengerId) {
+      isValid = cleanInput === getPassengerOtp(tripId, targetPassengerId);
+    }
+    if (!isValid && isPassenger) {
+      isValid = cleanInput === getPassengerOtp(tripId, currentUser.id);
+    }
+    if (!isValid) {
+      isValid = trip.ride.bookings.some(b => cleanInput === getPassengerOtp(tripId, b.passengerId));
+    }
+    if (!isValid) {
+      isValid = verifyOtp(tripId, cleanInput);
+    }
+
+    if (!isValid) {
+      const error = new Error('Invalid OTP. Please ask the passenger for their 4-digit boarding PIN.');
       error.statusCode = 400;
       throw error;
     }

@@ -64,7 +64,8 @@ class TripsController {
       const result = await tripsService.verifyOtpAndStart(
         req.user,
         req.params.id,
-        req.body.otp
+        req.body.otp,
+        req.body.passengerId
       );
       // Broadcast ride started to all participants
       const io = req.app.get('io');
