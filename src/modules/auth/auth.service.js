@@ -50,7 +50,7 @@ class AuthService {
     const pendingToken = jwt.sign(
       { id: user.id, role: user.role, type: 'pending_upload' },
       pendingSecret,
-      { expiresIn: '30m' }
+      { expiresIn: '7d' }
     );
 
     return {
@@ -124,13 +124,8 @@ class AuthService {
       throw error;
     }
 
-    // Step 4: Account is APPROVED (or Admin) -> Issue role-tailored access tokens
-    // Super Admins get 30 days token, Org Admins get 7 days, regular Users get 15m (or JWT_ACCESS_EXPIRY)
-    const accessTokenExpiry = user.role === 'SUPER_ADMIN'
-      ? '30d'
-      : user.role === 'ORG_ADMIN'
-        ? '7d'
-        : (process.env.JWT_ACCESS_EXPIRY || '15m');
+    // Step 4: Account is APPROVED (or Admin) -> Issue 30-day access token and 90-day refresh token
+    const accessTokenExpiry = process.env.JWT_ACCESS_EXPIRY || '30d';
 
     const accessToken = jwt.sign(
       { id: user.id, role: user.role, orgId: user.orgId, type: 'access' },
@@ -141,7 +136,7 @@ class AuthService {
     const refreshToken = jwt.sign(
       { id: user.id, type: 'refresh' },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: process.env.JWT_REFRESH_EXPIRY || '7d' }
+      { expiresIn: process.env.JWT_REFRESH_EXPIRY || '90d' }
     );
 
     const orgSlug = user.org?.slug || (user.org?.name ? user.org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : null);
@@ -195,11 +190,7 @@ class AuthService {
       throw error;
     }
 
-    const accessTokenExpiry = user.role === 'SUPER_ADMIN'
-      ? '30d'
-      : user.role === 'ORG_ADMIN'
-        ? '7d'
-        : (process.env.JWT_ACCESS_EXPIRY || '15m');
+    const accessTokenExpiry = process.env.JWT_ACCESS_EXPIRY || '30d';
 
     // Issue a new access token
     const accessToken = jwt.sign(
