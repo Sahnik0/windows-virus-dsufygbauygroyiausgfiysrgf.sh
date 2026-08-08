@@ -39,8 +39,8 @@ class PaymentsService {
       throw error;
     }
 
-    if (trip.status !== 'PAYMENT_PENDING') {
-      const error = new Error(`Payment invalid: Trip is in status ${trip.status}, expected PAYMENT_PENDING`);
+    if (trip.status !== 'COMPLETED' && trip.status !== 'IN_PROGRESS') {
+      const error = new Error(`Payment invalid: Trip must be IN_PROGRESS or COMPLETED to process payment (current: ${trip.status})`);
       error.statusCode = 400;
       throw error;
     }
@@ -97,7 +97,7 @@ class PaymentsService {
           walletId: wallet.id,
           type: 'DEBIT',
           amount,
-          reason: `Payment for trip ${trip.id}`,
+          description: `Payment for trip ${trip.id}`,
         },
       });
 
@@ -105,7 +105,6 @@ class PaymentsService {
       const payment = await tx.payment.create({
         data: {
           tripId: trip.id,
-          payerId: currentUser.id,
           amount,
           method: 'WALLET',
           status: 'PAID',
@@ -115,7 +114,7 @@ class PaymentsService {
       // Advance Trip status to PAYMENT_COMPLETED
       const updatedTrip = await tx.trip.update({
         where: { id: trip.id },
-        data: { status: 'PAYMENT_COMPLETED' },
+        data: { status: 'COMPLETED' },
       });
 
       return {
@@ -132,7 +131,6 @@ class PaymentsService {
       const payment = await tx.payment.create({
         data: {
           tripId: trip.id,
-          payerId: currentUser.id,
           amount,
           method: 'CASH',
           status: 'PAID',
@@ -141,7 +139,7 @@ class PaymentsService {
 
       const updatedTrip = await tx.trip.update({
         where: { id: trip.id },
-        data: { status: 'PAYMENT_COMPLETED' },
+        data: { status: 'COMPLETED' },
       });
 
       return {
@@ -171,7 +169,6 @@ class PaymentsService {
     const payment = await prisma.payment.create({
       data: {
         tripId: trip.id,
-        payerId: currentUser.id,
         amount,
         method,
         status: 'PENDING',
@@ -236,7 +233,7 @@ class PaymentsService {
 
           await tx.trip.update({
             where: { id: payment.tripId },
-            data: { status: 'PAYMENT_COMPLETED' },
+            data: { status: 'COMPLETED' },
           });
         });
 

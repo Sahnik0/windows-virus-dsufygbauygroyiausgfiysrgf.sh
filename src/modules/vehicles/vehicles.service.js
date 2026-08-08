@@ -135,7 +135,7 @@ class VehiclesService {
       const activeRide = await prisma.ride.findFirst({
         where: {
           vehicleId,
-          status: { in: ['PUBLISHED', 'FULL'] },
+          status: { in: ['SCHEDULED', 'ACTIVE'] },
         },
       });
 
