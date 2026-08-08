@@ -20,8 +20,8 @@ class NegotiationsService {
       throw error;
     }
 
-    if (ride.status !== 'PUBLISHED') {
-      const error = new Error('Cannot negotiate fare on a ride that is no longer published');
+    if (ride.status !== 'SCHEDULED') {
+      const error = new Error('Cannot negotiate fare on a ride that is no longer accepting bookings');
       error.statusCode = 409;
       throw error;
     }
@@ -144,8 +144,8 @@ class NegotiationsService {
       throw error;
     }
 
-    if (negotiation.ride.status !== 'PUBLISHED') {
-      const error = new Error('Cannot counter-offer on a ride that is no longer published');
+    if (negotiation.ride.status !== 'SCHEDULED') {
+      const error = new Error('Cannot counter-offer on a ride that is no longer accepting bookings');
       error.statusCode = 409;
       throw error;
     }
@@ -202,8 +202,8 @@ class NegotiationsService {
       throw error;
     }
 
-    if (negotiation.ride.status !== 'PUBLISHED') {
-      const error = new Error('Cannot accept negotiation for a ride that is no longer published');
+    if (negotiation.ride.status !== 'SCHEDULED') {
+      const error = new Error('Cannot accept negotiation for a ride that is no longer accepting bookings');
       error.statusCode = 409;
       throw error;
     }

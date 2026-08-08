@@ -62,6 +62,12 @@ enum JoinRequestStatus {
   CANCELLED
 }
 
+// Who initiated the join request
+enum InitiatedBy {
+  PASSENGER
+  DRIVER
+}
+
 // Trip status
 enum TripStatus {
   SCHEDULED
@@ -83,6 +89,19 @@ enum PaymentStatus {
   PENDING
   PAID
   FAILED
+}
+
+// Negotiation lifecycle status
+enum NegotiationStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+}
+
+// Which side submitted a negotiation offer
+enum OfferSide {
+  PASSENGER
+  DRIVER
 }
 
 model Org {
@@ -199,7 +218,7 @@ model Ride {
 
 model JoinRequest {
   id             String            @id @default(uuid())
-  initiatedBy    Role              @default(USER)
+  initiatedBy    InitiatedBy       @default(PASSENGER)
   agreedFare     Decimal           @db.Decimal(10, 2)
   seatsRequested Int               @default(1)
   status         JoinRequestStatus @default(PENDING)
@@ -220,14 +239,10 @@ model JoinRequest {
 }
 
 model Negotiation {
-  id          String   @id @default(uuid())
-  proposedBy  Role
-  offeredFare Decimal  @db.Decimal(10, 2)
-  note        String?
-  createdAt   DateTime @default(now())
-
-  requestId String
-  request   JoinRequest @relation(fields: [requestId], references: [id])
+  id        String            @id @default(uuid())
+  status    NegotiationStatus @default(OPEN)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
   rideId String
   ride   Ride   @relation(fields: [rideId], references: [id])
@@ -235,8 +250,25 @@ model Negotiation {
   passengerId String
   passenger   User   @relation("PassengerNegotiations", fields: [passengerId], references: [id])
 
-  @@index([requestId])
+  requestId String?
+  request   JoinRequest? @relation(fields: [requestId], references: [id])
+
+  offers NegotiationOffer[]
+
   @@index([rideId])
+  @@index([passengerId])
+}
+
+model NegotiationOffer {
+  id        String    @id @default(uuid())
+  offeredBy OfferSide
+  amount    Decimal   @db.Decimal(10, 2)
+  createdAt DateTime  @default(now())
+
+  negotiationId String
+  negotiation   Negotiation @relation(fields: [negotiationId], references: [id])
+
+  @@index([negotiationId])
 }
 
 model Booking {
@@ -334,9 +366,9 @@ model Message {
 }
 
 model CallLog {
-  id         String    @id @default(uuid())
-  startedAt  DateTime  @default(now())
-  endedAt    DateTime?
+  id          String    @id @default(uuid())
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
   durationSec Int?
 
   tripId String
@@ -422,13 +454,13 @@ model SavedPlace {
 }
 
 model FareBreakdown {
-  id             String  @id @default(uuid())
-  distanceKm     Float
-  durationMin    Float
-  fuelComponent  Decimal @db.Decimal(10, 2)
-  baseFee        Decimal @db.Decimal(10, 2)
-  orgSubsidy     Decimal @db.Decimal(10, 2)
-  finalPerRider  Decimal @db.Decimal(10, 2)
+  id            String  @id @default(uuid())
+  distanceKm    Float
+  durationMin   Float
+  fuelComponent Decimal @db.Decimal(10, 2)
+  baseFee       Decimal @db.Decimal(10, 2)
+  orgSubsidy    Decimal @db.Decimal(10, 2)
+  finalPerRider Decimal @db.Decimal(10, 2)
 
   tripId String @unique
   trip   Trip   @relation(fields: [tripId], references: [id])
