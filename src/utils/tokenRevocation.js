@@ -1,23 +1,14 @@
-// In-memory revoked refresh token store.
-// Choice rationale: For a single-instance REST API server, an in-memory Set provides 
-// sub-millisecond lookup times for token revocation without adding database query overhead.
+// Fast in-memory Set store to track revoked (logged out) refresh tokens
 const revokedTokens = new Set();
 
-/**
- * Revokes a refresh token by adding it to the in-memory revoked tokens set.
- * @param {string} token - Refresh token to revoke
- */
+// Adds a refresh token to the revoked set when a user logs out
 function revokeToken(token) {
   if (token) {
     revokedTokens.add(token);
   }
 }
 
-/**
- * Checks if a refresh token has been revoked.
- * @param {string} token - Refresh token to check
- * @returns {boolean} True if revoked
- */
+// Checks if a refresh token has been revoked (returns true if found in set)
 function isTokenRevoked(token) {
   return revokedTokens.has(token);
 }

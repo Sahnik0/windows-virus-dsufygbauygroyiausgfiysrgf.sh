@@ -3,11 +3,10 @@ const prisma = require('../../config/prisma');
 const { assertTripParticipant } = require('../../utils/tripAuth');
 const { getRoute } = require('../../utils/routing');
 
-// In-memory ETA throttling cache per trip
-// Key: tripId -> Value: { lastCalculatedAt: number, etaMinutes: number }
+// In-memory cache for ETA calculations per trip (prevents hammering OSRM demo server)
 const etaCache = new Map();
 
-// Sweep stale ETA cache entries older than 10 minutes to prevent memory leak
+// Periodic cleanup timer for stale ETA cache entries (older than 10 minutes)
 setInterval(() => {
   const now = Date.now();
   for (const [tripId, cached] of etaCache.entries()) {
@@ -17,15 +16,17 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
+// Registers real-time live vehicle tracking handlers for the /tracking Socket.io namespace
 function registerTrackingHandlers(io) {
   const trackingNamespace = io.of('/tracking');
 
+  // Authenticate socket connections with JWT access token
   trackingNamespace.use(socketAuthMiddleware);
 
   trackingNamespace.on('connection', (socket) => {
     console.log(`[Tracking Socket] User connected: ${socket.user.id}`);
 
-    // Join trip room and send initial route info
+    // Join trip room and send planned route geometry immediately on join
     socket.on('join:trip', async ({ tripId }) => {
       try {
         await assertTripParticipant(socket.user.id, tripId);
@@ -38,7 +39,6 @@ function registerTrackingHandlers(io) {
           include: { ride: { select: { routeGeometry: true } } },
         });
 
-        // Send planned route geometry immediately on join
         socket.emit('route:info', {
           tripId,
           routeGeometry: trip.ride.routeGeometry,
@@ -48,7 +48,7 @@ function registerTrackingHandlers(io) {
       }
     });
 
-    // Driver location update
+    // Driver emits live location updates
     socket.on('location:update', async ({ tripId, lat, lng }) => {
       try {
         const { isDriver, trip } = await assertTripParticipant(socket.user.id, tripId);
@@ -57,14 +57,14 @@ function registerTrackingHandlers(io) {
           return socket.emit('error', { message: 'Only the driver can send location updates' });
         }
 
-        // Reject emits for trips not in active states
+        // Only allow tracking for active trips
         if (trip.status !== 'TRIP_STARTED' && trip.status !== 'TRIP_IN_PROGRESS') {
           return socket.emit('error', {
             message: `Location tracking inactive for trip in status ${trip.status}`,
           });
         }
 
-        // 1. Persist location point
+        // 1. Save GPS coordinate to database
         const location = await prisma.tripLocation.create({
           data: {
             tripId,
@@ -73,8 +73,7 @@ function registerTrackingHandlers(io) {
           },
         });
 
-        // 2. ETA Throttling: Recalculating ETA on every location update can hammer the shared public OSRM server.
-        // Server throttles OSRM route calculations to at most once per 30 seconds per active trip, reusing the last computed value in between.
+        // 2. ETA Throttling: Recalculate OSRM ETA at most once per 30 seconds per trip
         const now = Date.now();
         const cachedEta = etaCache.get(tripId);
         let etaMinutes = cachedEta ? cachedEta.etaMinutes : null;
@@ -88,7 +87,7 @@ function registerTrackingHandlers(io) {
           etaCache.set(tripId, { lastCalculatedAt: now, etaMinutes });
         }
 
-        // 3. Broadcast to trip room
+        // 3. Broadcast updated location and ETA to all clients in the trip room
         trackingNamespace.to(`trip:${tripId}`).emit('location:update', {
           tripId,
           lat,

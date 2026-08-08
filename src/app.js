@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 
+// Import modular API router definitions
 const authRoutes = require('./modules/auth/auth.routes');
 const usersRoutes = require('./modules/users/users.routes');
 const orgsRoutes = require('./modules/orgs/orgs.routes');
@@ -19,26 +20,33 @@ const errorHandler = require('./middleware/error.middleware');
 
 const app = express();
 
-// Security and utility middleware
+// Security headers with Helmet
 app.use(helmet());
+
+// Cross-Origin Resource Sharing (CORS) enabled for all origins
 app.use(cors());
+
+// Parse incoming JSON body and capture raw body buffer for Webhook HMAC verification
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 }));
+
+// Parse URL-encoded body data
 app.use(express.urlencoded({ extended: true }));
 
+// Log HTTP requests in development environment
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-// Health check endpoint
+// Health check route for Render load balancer health checks
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// API Routes
+// Mount module REST API endpoints under /api/v1 prefix
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', usersRoutes);
 app.use('/api/v1/orgs', orgsRoutes);
@@ -52,7 +60,7 @@ app.use('/api/v1/wallet', walletRoutes);
 app.use('/api/v1/payments', paymentsRoutes);
 app.use('/api/v1/reports', reportsRoutes);
 
-// Global Error Handler
+// Global centralized error handling middleware
 app.use(errorHandler);
 
 module.exports = app;

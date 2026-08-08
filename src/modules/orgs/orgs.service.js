@@ -1,28 +1,26 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 const bcrypt = require('bcrypt');
 
+// Service class containing business logic for Organization operations
 class OrgsService {
-  /**
-   * Creates a new organization (SUPER_ADMIN only).
-   */
-  async createOrg({ name, fuelCostPerLitre, costPerKmDefault }) {
+  // Creates a new organization record (SUPER_ADMIN only)
+  async createOrg({ name, slug, status = 'ACTIVE', fuelCostPerLitre, costPerKmDefault }) {
+    const finalSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    
     return await prisma.org.create({
       data: {
         name,
+        slug: finalSlug,
+        status,
         ...(fuelCostPerLitre !== undefined && { fuelCostPerLitre }),
         ...(costPerKmDefault !== undefined && { costPerKmDefault }),
       },
     });
   }
 
-  /**
-   * Lists all organizations (SUPER_ADMIN only).
-   */
+  // Lists all registered organizations with employee count (SUPER_ADMIN only)
   async getAllOrgs() {
-    return await prisma.org.findMany({
+    const orgs = await prisma.org.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -30,12 +28,15 @@ class OrgsService {
         },
       },
     });
+
+    // Ensure slug is present in output (fallback to slugified name)
+    return orgs.map((org) => ({
+      ...org,
+      slug: org.slug || org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+    }));
   }
 
-  /**
-   * Provisions an ORG_ADMIN account for a given org (SUPER_ADMIN only).
-   * Provisioned admins are automatically APPROVED without going through approval flow.
-   */
+  // Provisions an Org Admin account (automatically APPROVED without ID proof upload)
   async provisionOrgAdmin(orgId, { email, password, firstName, lastName, phone }) {
     const org = await prisma.org.findUnique({ where: { id: orgId } });
     if (!org) {
@@ -62,7 +63,7 @@ class OrgsService {
         phone,
         role: 'ORG_ADMIN',
         orgId,
-        verificationStatus: 'APPROVED', // Provisioned admins bypass approval gate
+        verificationStatus: 'APPROVED', // Provisioned admins bypass pending review
       },
       select: {
         id: true,
@@ -80,9 +81,7 @@ class OrgsService {
     return admin;
   }
 
-  /**
-   * Lists all Org Admins for a specific org (SUPER_ADMIN only).
-   */
+  // Lists all Org Admins assigned to a specific organization (SUPER_ADMIN only)
   async getOrgAdmins(orgId) {
     return await prisma.user.findMany({
       where: {
@@ -103,11 +102,20 @@ class OrgsService {
     });
   }
 
-  /**
-   * Updates fuelCostPerLitre or costPerKmDefault for an org.
-   * ORG_ADMIN can only update their own org. SUPER_ADMIN can update any org.
-   */
-  async updateOrgSettings(currentUser, targetOrgId, { fuelCostPerLitre, costPerKmDefault }) {
+  // Updates fuel cost per litre, cost per km, or settings for an organization
+  async updateOrgSettings(currentUser, targetOrgId, data) {
+    const {
+      fuelCostPerLitre,
+      costPerKmDefault,
+      subsidyPercent,
+      baseRideCharge,
+      maxRidersPerCarpool,
+      autoMatchEnabled,
+      departmentRestriction,
+      status,
+    } = data;
+
+    // Ensure ORG_ADMIN can only update their own organization's settings
     if (currentUser.role === 'ORG_ADMIN' && currentUser.orgId !== targetOrgId) {
       const error = new Error('Forbidden: Cannot update settings for another organization');
       error.statusCode = 403;
@@ -126,6 +134,12 @@ class OrgsService {
       data: {
         ...(fuelCostPerLitre !== undefined && { fuelCostPerLitre }),
         ...(costPerKmDefault !== undefined && { costPerKmDefault }),
+        ...(subsidyPercent !== undefined && { subsidyPercent }),
+        ...(baseRideCharge !== undefined && { baseRideCharge }),
+        ...(maxRidersPerCarpool !== undefined && { maxRidersPerCarpool }),
+        ...(autoMatchEnabled !== undefined && { autoMatchEnabled }),
+        ...(departmentRestriction !== undefined && { departmentRestriction }),
+        ...(status !== undefined && { status }),
       },
     });
   }

@@ -1,12 +1,8 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 
+// Service class containing business logic for turn-based fare negotiations
 class NegotiationsService {
-  /**
-   * Starts a fare negotiation for a ride (Passenger only).
-   */
+  // Starts a new price negotiation session for a ride (Passenger only)
   async createNegotiation(currentUser, rideId, amount) {
     const ride = await prisma.ride.findUnique({
       where: { id: rideId },
@@ -42,7 +38,7 @@ class NegotiationsService {
       throw error;
     }
 
-    // Check if an OPEN negotiation already exists between passenger and ride
+    // Check if an OPEN negotiation session already exists for this passenger
     const existing = await prisma.negotiation.findFirst({
       where: {
         rideId,
@@ -75,9 +71,7 @@ class NegotiationsService {
     });
   }
 
-  /**
-   * Lists open negotiations for a ride (Driver only).
-   */
+  // Lists all open negotiations for a ride (Driver only)
   async getRideNegotiations(currentUser, rideId) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
 
@@ -105,9 +99,7 @@ class NegotiationsService {
     });
   }
 
-  /**
-   * Retrieves full negotiation offer history (Passenger or Driver involved).
-   */
+  // Gets full offer history for a specific negotiation session
   async getNegotiationById(currentUser, rideId, negotiationId) {
     const negotiation = await prisma.negotiation.findUnique({
       where: { id: negotiationId },
@@ -136,10 +128,7 @@ class NegotiationsService {
     return negotiation;
   }
 
-  /**
-   * Adds a counter-offer to an open negotiation.
-   * Rejects if the same party tries to counter twice in a row without response.
-   */
+  // Adds a counter-offer (enforces strict alternating turns so same party cannot offer twice in a row)
   async counterOffer(currentUser, rideId, negotiationId, amount) {
     const negotiation = await prisma.negotiation.findUnique({
       where: { id: negotiationId },
@@ -179,6 +168,7 @@ class NegotiationsService {
     const expectedOfferedBy = isDriver ? 'DRIVER' : 'PASSENGER';
     const lastOffer = negotiation.offers[0];
 
+    // Reject if caller is trying to counter their own offer without waiting for response
     if (lastOffer && lastOffer.offeredBy === expectedOfferedBy) {
       const error = new Error('Cannot counter your own offer twice in a row. Waiting for the other party to respond.');
       error.statusCode = 400;
@@ -196,9 +186,7 @@ class NegotiationsService {
     return await this.getNegotiationById(currentUser, rideId, negotiationId);
   }
 
-  /**
-   * Accepts the other party's latest offer. Sets Negotiation.status = ACCEPTED.
-   */
+  // Accepts the other party's latest offer and marks Negotiation.status as ACCEPTED
   async acceptNegotiation(currentUser, rideId, negotiationId) {
     const negotiation = await prisma.negotiation.findUnique({
       where: { id: negotiationId },
@@ -238,6 +226,7 @@ class NegotiationsService {
     const lastOffer = negotiation.offers[0];
     const callerRole = isDriver ? 'DRIVER' : 'PASSENGER';
 
+    // Must accept the OTHER party's offer, not your own
     if (lastOffer && lastOffer.offeredBy === callerRole) {
       const error = new Error('Cannot accept your own offer. The other party must accept it.');
       error.statusCode = 400;
@@ -259,9 +248,7 @@ class NegotiationsService {
     };
   }
 
-  /**
-   * Rejects a negotiation. Sets Negotiation.status = REJECTED.
-   */
+  // Rejects a negotiation session
   async rejectNegotiation(currentUser, rideId, negotiationId) {
     const negotiation = await prisma.negotiation.findUnique({
       where: { id: negotiationId },

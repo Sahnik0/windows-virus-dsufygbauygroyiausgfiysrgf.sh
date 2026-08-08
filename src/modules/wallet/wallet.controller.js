@@ -1,6 +1,8 @@
 const walletService = require('./wallet.service');
 
+// Controller handling Wallet HTTP endpoints
 class WalletController {
+  // Returns current user wallet balance and transaction history
   async getWallet(req, res, next) {
     try {
       const result = await walletService.getWallet(req.user);
@@ -10,6 +12,7 @@ class WalletController {
     }
   }
 
+  // Creates a Razorpay order for wallet recharge
   async createRechargeOrder(req, res, next) {
     try {
       const result = await walletService.createRechargeOrder(req.user, req.body.amount);
@@ -19,6 +22,7 @@ class WalletController {
     }
   }
 
+  // Verifies Razorpay payment signature and credits wallet balance
   async verifyRecharge(req, res, next) {
     try {
       const result = await walletService.verifyRecharge(req.user, req.body);

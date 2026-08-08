@@ -1,6 +1,8 @@
 const usersService = require('./users.service');
 
+// Controller handling user management HTTP endpoints
 class UsersController {
+  // Returns all users in caller's organization
   async getAllUsers(req, res, next) {
     try {
       const filterOrgId = req.query.orgId;
@@ -11,6 +13,7 @@ class UsersController {
     }
   }
 
+  // Returns single user profile by ID
   async getUserById(req, res, next) {
     try {
       const result = await usersService.getUserById(req.user, req.params.id);
@@ -20,6 +23,7 @@ class UsersController {
     }
   }
 
+  // Updates user profile info
   async updateUser(req, res, next) {
     try {
       const result = await usersService.updateUser(req.user, req.params.id, req.body);
@@ -29,6 +33,7 @@ class UsersController {
     }
   }
 
+  // Returns list of users waiting for admin verification approval
   async getPendingUsers(req, res, next) {
     try {
       const filterOrgId = req.query.orgId;
@@ -39,6 +44,7 @@ class UsersController {
     }
   }
 
+  // Streams uploaded ID proof file to admin client
   async getIdProof(req, res, next) {
     try {
       const { filePath } = await usersService.getIdProof(req.user, req.params.id);
@@ -48,6 +54,7 @@ class UsersController {
     }
   }
 
+  // Approves user registration
   async approveUser(req, res, next) {
     try {
       const result = await usersService.approveUser(req.user, req.params.id);
@@ -57,6 +64,7 @@ class UsersController {
     }
   }
 
+  // Rejects user registration with reason
   async rejectUser(req, res, next) {
     try {
       const result = await usersService.rejectUser(req.user, req.params.id, req.body.rejectionReason);

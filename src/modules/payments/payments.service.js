@@ -1,14 +1,10 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 const razorpay = require('../../config/razorpay');
 const crypto = require('crypto');
 
+// Service class containing business logic for trip payment processing and Razorpay webhooks
 class PaymentsService {
-  /**
-   * Processes a payment for a trip in PAYMENT_PENDING status.
-   */
+  // Processes payment for a trip in PAYMENT_PENDING state
   async processTripPayment(currentUser, tripId, { method }) {
     const trip = await prisma.trip.findUnique({
       where: { id: tripId },
@@ -29,14 +25,12 @@ class PaymentsService {
       throw error;
     }
 
-    // Org isolation check
     if (currentUser.role !== 'SUPER_ADMIN' && trip.ride.orgId !== currentUser.orgId) {
       const error = new Error('Unauthorized access to trip in another organization');
       error.statusCode = 403;
       throw error;
     }
 
-    // Participant verification: ensure user is the driver or a booked passenger on this trip
     const isDriver = trip.ride.driverId === currentUser.id;
     const acceptedRequest = trip.ride.joinRequests[0];
     if (!isDriver && !acceptedRequest) {
@@ -51,7 +45,7 @@ class PaymentsService {
       throw error;
     }
 
-    // Determine payment amount strictly from agreed fare or ride farePerSeat (ignore custom client overrides)
+    // Determine exact payment amount from agreed fare or ride farePerSeat
     const amount = acceptedRequest ? Number(acceptedRequest.agreedFare) : Number(trip.ride.farePerSeat);
 
     if (method === 'WALLET') {
@@ -67,9 +61,7 @@ class PaymentsService {
     }
   }
 
-  /**
-   * Wallet Payment: Debits balance atomically and completes trip payment.
-   */
+  // Wallet payment logic: Checks balance, debits wallet atomically, and updates trip to PAYMENT_COMPLETED
   async payWithWallet(currentUser, trip, amount) {
     return await prisma.$transaction(async (tx) => {
       let wallet = await tx.wallet.findUnique({
@@ -78,7 +70,7 @@ class PaymentsService {
 
       if (!wallet || Number(wallet.balance) < amount) {
         const error = new Error('Insufficient wallet balance to pay for this trip');
-        error.statusCode = 402; // Payment Required
+        error.statusCode = 402; // 402 Payment Required
         throw error;
       }
 
@@ -99,7 +91,7 @@ class PaymentsService {
         throw error;
       }
 
-      // 2. Log Wallet transaction
+      // Log DEBIT transaction in wallet ledger
       await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
@@ -109,7 +101,7 @@ class PaymentsService {
         },
       });
 
-      // 3. Create PAID Payment row
+      // Create PAID Payment record
       const payment = await tx.payment.create({
         data: {
           tripId: trip.id,
@@ -120,7 +112,7 @@ class PaymentsService {
         },
       });
 
-      // 4. Advance Trip.status -> PAYMENT_COMPLETED
+      // Advance Trip status to PAYMENT_COMPLETED
       const updatedTrip = await tx.trip.update({
         where: { id: trip.id },
         data: { status: 'PAYMENT_COMPLETED' },
@@ -134,9 +126,7 @@ class PaymentsService {
     });
   }
 
-  /**
-   * Cash Payment: Marks payment as PAID directly and completes trip.
-   */
+  // Cash payment logic: Creates PAID payment record directly and advances trip status to PAYMENT_COMPLETED
   async payWithCash(currentUser, trip, amount) {
     return await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
@@ -162,9 +152,7 @@ class PaymentsService {
     });
   }
 
-  /**
-   * Card/UPI Razorpay Order creation.
-   */
+  // Creates Razorpay gateway order for CARD/UPI trip payments
   async createRazorpayTripOrder(currentUser, trip, method, amount) {
     const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder';
 
@@ -200,13 +188,11 @@ class PaymentsService {
     };
   }
 
-  /**
-   * Razorpay Webhook Receiver: Idempotently completes payment on payment.captured event.
-   */
+  // Verifies Razorpay Webhook signature and idempotently marks trip as PAYMENT_COMPLETED on payment.captured
   async handleRazorpayWebhook(rawBody, signature) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_webhook_secret_placeholder';
 
-    // Verify webhook signature with constant-time comparison
+    // Verify HMAC-SHA256 signature using timing-safe buffer comparison
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
       .update(rawBody)
@@ -229,13 +215,12 @@ class PaymentsService {
       const razorpayOrderId = paymentEntity.order_id;
       const razorpayPaymentId = paymentEntity.id;
 
-      // Find matching payment by razorpayOrderId
       const payment = await prisma.payment.findFirst({
         where: { razorpayOrderId },
       });
 
       if (payment) {
-        // Idempotency check: if already PAID, ignore duplicate webhook payload
+        // Idempotency check: skip if payment is already processed
         if (payment.status === 'PAID') {
           return { message: 'Webhook already processed (idempotent skip)' };
         }

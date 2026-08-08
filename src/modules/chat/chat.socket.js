@@ -2,14 +2,17 @@ const socketAuthMiddleware = require('../../middleware/socketAuth.middleware');
 const chatService = require('./chat.service');
 const { assertTripParticipant } = require('../../utils/tripAuth');
 
+// Registers real-time in-trip chat handlers for the /chat Socket.io namespace
 function registerChatHandlers(io) {
   const chatNamespace = io.of('/chat');
 
+  // Authenticate socket connection using JWT access token
   chatNamespace.use(socketAuthMiddleware);
 
   chatNamespace.on('connection', (socket) => {
     console.log(`[Chat Socket] User connected: ${socket.user.id}`);
 
+    // Join trip room for real-time chat
     socket.on('join:trip', async ({ tripId }) => {
       try {
         await assertTripParticipant(socket.user.id, tripId);
@@ -19,6 +22,7 @@ function registerChatHandlers(io) {
       }
     });
 
+    // Receive message from client, persist to DB, and broadcast to room
     socket.on('message:send', async ({ tripId, content }) => {
       try {
         if (!content || typeof content !== 'string') {

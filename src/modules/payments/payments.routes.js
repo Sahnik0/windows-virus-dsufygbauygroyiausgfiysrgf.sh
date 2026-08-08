@@ -6,7 +6,7 @@ const { processPaymentSchema } = require('./payments.validation');
 
 const router = express.Router();
 
-// Trip payment route
+// 1. Process trip payment (WALLET, CASH, CARD, UPI)
 router.post(
   '/trips/:tripId/pay',
   authenticateToken,
@@ -14,7 +14,7 @@ router.post(
   paymentsController.processTripPayment
 );
 
-// Razorpay Webhook Receiver
+// 2. Razorpay Webhook listener endpoint
 router.post(
   '/webhook',
   express.raw({ type: 'application/json' }),

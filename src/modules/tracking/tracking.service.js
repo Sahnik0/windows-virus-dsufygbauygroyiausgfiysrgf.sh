@@ -1,11 +1,11 @@
 const prisma = require('../../config/prisma');
 const { assertTripParticipant } = require('../../utils/tripAuth');
 
+// Service class handling REST fallback for vehicle live tracking
 class TrackingService {
-  /**
-   * REST fallback to fetch latest vehicle location and planned route geometry.
-   */
+  // Returns latest recorded GPS location and planned route geometry for a trip
   async getLatestLocation(currentUser, tripId) {
+    // Verify caller is driver or booked passenger
     await assertTripParticipant(currentUser.id, tripId);
 
     const latestLocation = await prisma.tripLocation.findFirst({

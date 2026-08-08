@@ -2,15 +2,13 @@ const socketAuthMiddleware = require('../../middleware/socketAuth.middleware');
 const { assertTripParticipant } = require('../../utils/tripAuth');
 const crypto = require('crypto');
 
-// In-memory call state sessions
-// Key: callId -> Value: { callId, tripId, callerId, calleeId, status, createdAt }
+// In-memory call sessions map (Key: callId -> Value: { callId, tripId, callerId, calleeId, status, createdAt })
 const activeCalls = new Map();
 
-// Map tracking active socket connections per userId
-// Key: userId -> Value: Set<socket.id>
+// Active socket connections map per user (Key: userId -> Value: Set of socket IDs)
 const userSockets = new Map();
 
-// Periodic cleanup timer for stale calls (older than 10 minutes)
+// Periodic cleanup timer for stale calls older than 10 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [callId, call] of activeCalls.entries()) {
@@ -20,11 +18,14 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
+// Registers WebRTC call signaling handlers for the /calls Socket.io namespace
 function registerCallHandlers(io) {
   const callsNamespace = io.of('/calls');
 
+  // Authenticate socket connections with JWT access token
   callsNamespace.use(socketAuthMiddleware);
 
+  // Helper to emit events to all active sockets of a target user
   function emitToUser(userId, event, data) {
     const socketSet = userSockets.get(userId);
     if (!socketSet || socketSet.size === 0) return false;
@@ -37,6 +38,7 @@ function registerCallHandlers(io) {
   callsNamespace.on('connection', (socket) => {
     const userId = socket.user.id;
 
+    // Track user socket connection
     if (!userSockets.has(userId)) {
       userSockets.set(userId, new Set());
     }
@@ -44,14 +46,14 @@ function registerCallHandlers(io) {
 
     console.log(`[Calls Socket] User connected: ${userId} (socket ${socket.id})`);
 
-    // Initiate voice call signaling
+    // 1. Initiate voice call signaling
     socket.on('call:initiate', async ({ tripId, calleeId }) => {
       try {
-        // Assert both caller and callee are trip participants
+        // Verify both caller and callee are participants in the trip
         const { isDriver: callerIsDriver } = await assertTripParticipant(userId, tripId);
         const { isDriver: calleeIsDriver } = await assertTripParticipant(calleeId, tripId);
 
-        // Ensure call is between driver and a passenger (or vice-versa)
+        // Enforce that calls take place between driver and passenger
         if (callerIsDriver === calleeIsDriver) {
           return socket.emit('call:error', {
             message: 'Calls can only be initiated between driver and passenger',
@@ -60,7 +62,7 @@ function registerCallHandlers(io) {
 
         const calleeHasSockets = userSockets.has(calleeId) && userSockets.get(calleeId).size > 0;
 
-        // If callee is not connected to /calls namespace, inform caller
+        // Return callee_offline status if callee is not connected to /calls
         if (!calleeHasSockets) {
           return socket.emit('call:response', {
             status: 'callee_offline',
@@ -80,7 +82,7 @@ function registerCallHandlers(io) {
 
         activeCalls.set(callId, callSession);
 
-        // Relay incoming call signal to callee
+        // Relay incoming call notification to callee
         emitToUser(calleeId, 'call:incoming', {
           callId,
           tripId,
@@ -96,7 +98,7 @@ function registerCallHandlers(io) {
       }
     });
 
-    // Accept incoming call
+    // 2. Accept incoming call
     socket.on('call:accept', ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call || call.calleeId !== userId) {
@@ -107,7 +109,7 @@ function registerCallHandlers(io) {
       emitToUser(call.callerId, 'call:accepted', { callId });
     });
 
-    // Reject incoming call
+    // 3. Reject incoming call
     socket.on('call:reject', ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call || call.calleeId !== userId) {
@@ -119,12 +121,12 @@ function registerCallHandlers(io) {
       activeCalls.delete(callId);
     });
 
-    // End active call
+    // 4. End active call
     socket.on('call:end', ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call) return;
 
-      // Security check: verify calling socket belongs to caller or callee
+      // Verify caller is a participant in this call session
       if (call.callerId !== userId && call.calleeId !== userId) {
         return socket.emit('call:error', { message: 'Unauthorized call operation' });
       }
@@ -136,6 +138,7 @@ function registerCallHandlers(io) {
       activeCalls.delete(callId);
     });
 
+    // Clean up socket set on disconnect
     socket.on('disconnect', () => {
       const userSet = userSockets.get(userId);
       if (userSet) {
@@ -143,7 +146,7 @@ function registerCallHandlers(io) {
         if (userSet.size === 0) {
           userSockets.delete(userId);
 
-          // Clean up ringing calls if user completely disconnected
+          // End active ringing calls if user completely disconnects
           for (const [callId, call] of activeCalls.entries()) {
             if ((call.callerId === userId || call.calleeId === userId) && call.status === 'RINGING') {
               const otherId = call.callerId === userId ? call.calleeId : call.callerId;

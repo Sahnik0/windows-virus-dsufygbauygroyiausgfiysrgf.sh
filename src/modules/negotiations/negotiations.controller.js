@@ -1,6 +1,8 @@
 const negotiationsService = require('./negotiations.service');
 
+// Controller handling price negotiation HTTP endpoints
 class NegotiationsController {
+  // Starts a new price negotiation session (Passenger only)
   async createNegotiation(req, res, next) {
     try {
       const result = await negotiationsService.createNegotiation(
@@ -14,6 +16,7 @@ class NegotiationsController {
     }
   }
 
+  // Lists all open negotiations for a ride (Driver only)
   async getRideNegotiations(req, res, next) {
     try {
       const result = await negotiationsService.getRideNegotiations(
@@ -26,6 +29,7 @@ class NegotiationsController {
     }
   }
 
+  // Gets complete offer history for a negotiation
   async getNegotiationById(req, res, next) {
     try {
       const result = await negotiationsService.getNegotiationById(
@@ -39,6 +43,7 @@ class NegotiationsController {
     }
   }
 
+  // Submits a counter-offer in an open negotiation
   async counterOffer(req, res, next) {
     try {
       const result = await negotiationsService.counterOffer(
@@ -53,6 +58,7 @@ class NegotiationsController {
     }
   }
 
+  // Accepts the other party's latest offer
   async acceptNegotiation(req, res, next) {
     try {
       const result = await negotiationsService.acceptNegotiation(
@@ -66,6 +72,7 @@ class NegotiationsController {
     }
   }
 
+  // Rejects a price negotiation
   async rejectNegotiation(req, res, next) {
     try {
       const result = await negotiationsService.rejectNegotiation(

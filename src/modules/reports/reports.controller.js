@@ -1,6 +1,8 @@
 const reportsService = require('./reports.service');
 
+// Controller handling Administrative Reporting HTTP endpoints
 class ReportsController {
+  // Handles summary report requests (total trips and total distance)
   async getSummaryReport(req, res, next) {
     try {
       const { orgId, startDate, endDate } = req.query;
@@ -11,6 +13,7 @@ class ReportsController {
     }
   }
 
+  // Handles fuel report requests (estimated fuel litres and total fuel cost)
   async getFuelReport(req, res, next) {
     try {
       const { orgId, startDate, endDate } = req.query;
@@ -21,6 +24,7 @@ class ReportsController {
     }
   }
 
+  // Handles cost per km report requests
   async getCostPerKmReport(req, res, next) {
     try {
       const { orgId } = req.query;
@@ -31,6 +35,7 @@ class ReportsController {
     }
   }
 
+  // Handles per-vehicle cost report requests
   async getVehicleCostReport(req, res, next) {
     try {
       const { orgId } = req.query;

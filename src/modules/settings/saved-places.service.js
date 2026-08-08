@@ -1,12 +1,8 @@
-// CRITICAL SECURITY RULE: SavedPlace operations are personal convenience features strictly scoped to req.user.id.
-// One user cannot see or edit another user's saved places.
-
 const prisma = require('../../config/prisma');
 
+// Service class containing business logic for personal Saved Places
 class SavedPlacesService {
-  /**
-   * Creates a saved place for the authenticated user.
-   */
+  // Creates a personal saved place for the authenticated user (bound strictly to currentUser.id)
   async createSavedPlace(currentUser, { label, address, latitude, longitude }) {
     return await prisma.savedPlace.create({
       data: {
@@ -19,9 +15,7 @@ class SavedPlacesService {
     });
   }
 
-  /**
-   * Lists all saved places owned by the authenticated user.
-   */
+  // Lists all personal saved places owned by the authenticated user
   async getSavedPlaces(currentUser) {
     return await prisma.savedPlace.findMany({
       where: { userId: currentUser.id },
@@ -29,9 +23,7 @@ class SavedPlacesService {
     });
   }
 
-  /**
-   * Gets a specific saved place by ID (owner-only).
-   */
+  // Fetches a single saved place record by ID (owner-only)
   async getSavedPlaceById(currentUser, placeId) {
     const place = await prisma.savedPlace.findUnique({
       where: { id: placeId },
@@ -52,9 +44,7 @@ class SavedPlacesService {
     return place;
   }
 
-  /**
-   * Updates a saved place (owner-only).
-   */
+  // Updates a saved place record (owner-only)
   async updateSavedPlace(currentUser, placeId, { label, address, latitude, longitude }) {
     const place = await prisma.savedPlace.findUnique({ where: { id: placeId } });
 
@@ -81,9 +71,7 @@ class SavedPlacesService {
     });
   }
 
-  /**
-   * Deletes a saved place (owner-only).
-   */
+  // Deletes a saved place record (owner-only)
   async deleteSavedPlace(currentUser, placeId) {
     const place = await prisma.savedPlace.findUnique({ where: { id: placeId } });
 

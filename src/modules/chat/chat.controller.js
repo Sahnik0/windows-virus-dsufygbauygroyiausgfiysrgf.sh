@@ -1,6 +1,8 @@
 const chatService = require('./chat.service');
 
+// Controller handling REST chat HTTP endpoints
 class ChatController {
+  // Sends a chat message via REST API and broadcasts real-time to socket listeners
   async sendMessage(req, res, next) {
     try {
       const { content } = req.body;
@@ -10,7 +12,7 @@ class ChatController {
 
       const result = await chatService.sendMessage(req.user, req.params.id, content);
 
-      // Emit real-time event to socket room if socket server is attached
+      // Broadcast real-time message event to Socket.io room if attached
       const io = req.app.get('io');
       if (io) {
         io.of('/chat').to(`trip:${req.params.id}`).emit('message:new', result);
@@ -22,6 +24,7 @@ class ChatController {
     }
   }
 
+  // Returns paginated chat message history
   async getMessages(req, res, next) {
     try {
       const page = parseInt(req.query.page, 10) || 1;
@@ -33,6 +36,7 @@ class ChatController {
     }
   }
 
+  // Marks unread messages as read
   async markAsRead(req, res, next) {
     try {
       const result = await chatService.markAsRead(req.user, req.params.id);

@@ -1,8 +1,6 @@
-/**
- * Haversine formula to compute straight-line distance between two lat/lng coordinates in kilometers.
- */
+// Haversine formula to compute straight-line Earth distance between two coordinates in kilometers
 function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Earth radius in km
+  const R = 6371; // Average radius of the Earth in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -15,18 +13,14 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return parseFloat((R * c).toFixed(2));
 }
 
-/**
- * Calls OSRM public demo routing service with fallback to Haversine straight-line distance on error or timeout.
- * @param {{ lat: number, lng: number }} origin - Pickup coordinate
- * @param {{ lat: number, lng: number }} destination - Destination coordinate
- * @returns {Promise<{ distanceKm: number, durationMinutes: number, routeGeometry: string|null, routeSource: string }>}
- */
+// Queries OSRM routing engine API with fallback to Haversine straight-line distance on error or timeout
 async function getRoute(origin, destination) {
   const baseUrl = process.env.OSRM_BASE_URL || 'https://router.project-osrm.org';
   const url = `${baseUrl}/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
 
+  // Set a 3-second timeout for the public OSRM demo server
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout for public demo server
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
@@ -55,8 +49,8 @@ async function getRoute(origin, destination) {
     clearTimeout(timeoutId);
     console.warn(`[Routing] OSRM call failed (${error.message}). Falling back to Haversine calculation.`);
 
+    // Fallback: Calculate distance using Haversine formula and estimate duration at 30 km/h average speed
     const distanceKm = haversineDistance(origin.lat, origin.lng, destination.lat, destination.lng);
-    // Assumed average urban driving speed 30 km/h -> ~2 minutes per km
     const durationMinutes = parseFloat((distanceKm * 2).toFixed(2));
 
     return {

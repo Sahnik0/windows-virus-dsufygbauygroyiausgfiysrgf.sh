@@ -11,7 +11,7 @@ const {
 
 const router = express.Router();
 
-// SUPER_ADMIN operations
+// 1. Create new organization (SUPER_ADMIN only)
 router.post(
   '/',
   authenticateToken,
@@ -20,6 +20,7 @@ router.post(
   orgsController.createOrg
 );
 
+// 2. List all organizations (SUPER_ADMIN only)
 router.get(
   '/',
   authenticateToken,
@@ -27,6 +28,7 @@ router.get(
   orgsController.getAllOrgs
 );
 
+// 3. Provision an Org Admin account for an organization (SUPER_ADMIN only)
 router.post(
   '/:orgId/admins',
   authenticateToken,
@@ -35,6 +37,7 @@ router.post(
   orgsController.provisionOrgAdmin
 );
 
+// 4. List all admins assigned to an organization (SUPER_ADMIN only)
 router.get(
   '/:orgId/admins',
   authenticateToken,
@@ -42,7 +45,7 @@ router.get(
   orgsController.getOrgAdmins
 );
 
-// ORG_ADMIN (own org) or SUPER_ADMIN
+// 5. Update organization pricing settings (ORG_ADMIN for own org, or SUPER_ADMIN)
 router.patch(
   '/:orgId/settings',
   authenticateToken,

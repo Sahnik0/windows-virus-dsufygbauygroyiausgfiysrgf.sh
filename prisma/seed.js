@@ -3,13 +3,14 @@ const bcrypt = require('bcrypt');
 
 const prisma = new PrismaClient();
 
+// Database seed script for initializing test organizations, admin accounts, drivers, and vehicles
 async function main() {
   console.log('Seeding database...');
 
-  // Hash standard test password with cost factor 10
+  // Hash standard test password 'Password123!' with bcrypt cost factor 10
   const defaultPasswordHash = await bcrypt.hash('Password123!', 10);
 
-  // 1. Create Super Admin (no org, verificationStatus APPROVED)
+  // 1. Create default Super Admin (platform-wide admin, no org, verificationStatus APPROVED)
   const superAdmin = await prisma.user.upsert({
     where: { email: 'superadmin@platform.com' },
     update: {},
@@ -19,6 +20,7 @@ async function main() {
       firstName: 'Super',
       lastName: 'Admin',
       phone: '+10000000000',
+      employeeId: 'EMP-0000',
       role: 'SUPER_ADMIN',
       orgId: null,
       verificationStatus: 'APPROVED',
@@ -26,13 +28,17 @@ async function main() {
   });
   console.log(`Created/Verified Super Admin: ${superAdmin.email}`);
 
-  // 2. Create Org
+  // 2. Create sample organization (Acme Corporation)
   const acmeOrg = await prisma.org.upsert({
     where: { id: 'acme-corp-org-id' },
-    update: {},
+    update: {
+      slug: 'acme-corporation',
+    },
     create: {
       id: 'acme-corp-org-id',
       name: 'Acme Corporation',
+      slug: 'acme-corporation',
+      status: 'ACTIVE',
       fuelCostPerLitre: 100.0,
       costPerKmDefault: 15.0,
     },
@@ -49,6 +55,7 @@ async function main() {
       firstName: 'Acme',
       lastName: 'Admin',
       phone: '+10000000001',
+      employeeId: 'EMP-0001',
       role: 'ORG_ADMIN',
       orgId: acmeOrg.id,
       verificationStatus: 'APPROVED',
@@ -56,16 +63,18 @@ async function main() {
   });
   console.log(`Created/Verified Org Admin: ${orgAdmin.email}`);
 
-  // 4. Create two USERs in Acme Org (verificationStatus APPROVED)
+  // 4. Create Driver and Passenger users in Acme Org (verificationStatus APPROVED)
   const user1 = await prisma.user.upsert({
     where: { email: 'driver@acme.com' },
-    update: {},
+    update: { rating: 4.9 },
     create: {
       email: 'driver@acme.com',
       passwordHash: defaultPasswordHash,
       firstName: 'Driver',
       lastName: 'User',
       phone: '+10000000002',
+      employeeId: 'EMP-1001',
+      rating: 4.9,
       role: 'USER',
       orgId: acmeOrg.id,
       verificationStatus: 'APPROVED',
@@ -81,6 +90,7 @@ async function main() {
       firstName: 'Passenger',
       lastName: 'User',
       phone: '+10000000003',
+      employeeId: 'EMP-1002',
       role: 'USER',
       orgId: acmeOrg.id,
       verificationStatus: 'APPROVED',
@@ -88,7 +98,7 @@ async function main() {
   });
   console.log(`Created/Verified Users: ${user1.email}, ${user2.email}`);
 
-  // 5. Create Vehicle owned by user1 (driver)
+  // 5. Create Vehicle owned by driver user
   const vehicle1 = await prisma.vehicle.upsert({
     where: { registrationNumber: 'KA-01-AB-1234' },
     update: {},
@@ -96,6 +106,8 @@ async function main() {
       model: 'Toyota Prius',
       registrationNumber: 'KA-01-AB-1234',
       seatingCapacity: 4,
+      fuelType: 'HYBRID',
+      status: 'VERIFIED',
       ownerId: user1.id,
     },
   });

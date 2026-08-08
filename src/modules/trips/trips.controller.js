@@ -1,6 +1,8 @@
 const tripsService = require('./trips.service');
 
+// Controller handling Trip lifecycle and history HTTP endpoints
 class TripsController {
+  // Returns paginated trip history
   async getTripHistory(req, res, next) {
     try {
       const page = parseInt(req.query.page, 10) || 1;
@@ -12,6 +14,7 @@ class TripsController {
     }
   }
 
+  // Returns active ongoing trips for user
   async getMyTrips(req, res, next) {
     try {
       const result = await tripsService.getMyTrips(req.user);
@@ -21,6 +24,7 @@ class TripsController {
     }
   }
 
+  // Gets trip details by ID
   async getTripById(req, res, next) {
     try {
       const result = await tripsService.getTripById(req.user, req.params.id);
@@ -30,6 +34,7 @@ class TripsController {
     }
   }
 
+  // Updates trip status (driver-only)
   async updateTripStatus(req, res, next) {
     try {
       const result = await tripsService.updateTripStatus(

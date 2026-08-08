@@ -1,16 +1,14 @@
 const { ZodError } = require('zod');
 
-/**
- * Middleware factory that validates request body, query, or params against a Zod schema.
- * @param {import('zod').ZodSchema} schema - Zod validation schema
- * @param {'body' | 'query' | 'params'} source - Request object property to validate
- */
+// Generic validation middleware to parse request body, query, or params against a Zod schema
 const validate = (schema, source = 'body') => {
   return (req, res, next) => {
     try {
+      // Parse and replace request data with sanitized Zod output
       req[source] = schema.parse(req[source]);
       next();
     } catch (error) {
+      // Format Zod validation errors into a clean JSON error response
       if (error instanceof ZodError) {
         return res.status(400).json({
           message: 'Validation failed',

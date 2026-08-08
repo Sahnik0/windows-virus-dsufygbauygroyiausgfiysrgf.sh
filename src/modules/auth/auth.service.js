@@ -3,12 +3,11 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../../config/prisma');
 const { revokeToken, isTokenRevoked } = require('../../utils/tokenRevocation');
 
+// Service class containing business logic for authentication
 class AuthService {
-  /**
-   * Registers a new USER under an existing organization with PENDING verification status.
-   */
-  async register({ email, password, firstName, lastName, phone, orgId }) {
-    // 1. Verify organization exists
+  // Registers a new USER account linked to an existing organization
+  async register({ email, password, firstName, lastName, phone, orgId, employeeId }) {
+    // Step 1: Make sure the target organization exists in database
     const org = await prisma.org.findUnique({ where: { id: orgId } });
     if (!org) {
       const error = new Error('Organization not found');
@@ -16,7 +15,7 @@ class AuthService {
       throw error;
     }
 
-    // 2. Check if email already registered
+    // Step 2: Prevent duplicate email registration
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       const error = new Error('Email is already registered');
@@ -24,10 +23,10 @@ class AuthService {
       throw error;
     }
 
-    // 3. Hash password with bcrypt cost factor 10
+    // Step 3: Securely hash the user's plain-text password using bcrypt
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // 4. Create user record
+    // Step 4: Create new user record with PENDING verification status
     const user = await prisma.user.create({
       data: {
         email,
@@ -35,13 +34,14 @@ class AuthService {
         firstName,
         lastName,
         phone,
+        employeeId: employeeId || null,
         role: 'USER',
         orgId,
         verificationStatus: 'PENDING',
       },
     });
 
-    // 5. Generate short-lived pending token specifically for ID-proof upload
+    // Step 5: Issue a temporary 30-minute JWT token solely for ID proof upload
     const pendingSecret = process.env.JWT_PENDING_SECRET || process.env.JWT_ACCESS_SECRET;
     const pendingToken = jwt.sign(
       { id: user.id, role: user.role, type: 'pending_upload' },
@@ -63,9 +63,7 @@ class AuthService {
     };
   }
 
-  /**
-   * Updates user record with uploaded ID proof path.
-   */
+  // Saves the uploaded ID proof file path to the user's database record
   async uploadIdProof(userId, filePath) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -74,6 +72,7 @@ class AuthService {
       throw error;
     }
 
+    // Update file path and upload timestamp
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -83,32 +82,34 @@ class AuthService {
     });
 
     return {
-      message: 'ID proof uploaded successfully. Your account is now pending admin approval.',
+      message: 'ID proof uploaded. Pending admin approval.',
       userId: updatedUser.id,
       verificationStatus: updatedUser.verificationStatus,
     };
   }
 
-  /**
-   * Authenticates user credentials and checks verification status before issuing tokens.
-   */
+  // Verifies user credentials and checks admin approval status before issuing login tokens
   async login(email, password) {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { org: true },
+    });
 
-    // Generic error to avoid leaking user existence vs password mismatch
+    // Step 1: Validate email existence and password match
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       const error = new Error('Invalid email or password');
       error.statusCode = 401;
       throw error;
     }
 
-    // Distinguish PENDING vs REJECTED verification status
+    // Step 2: Block login if account is still PENDING admin review
     if (user.verificationStatus === 'PENDING') {
       const error = new Error('Your ID proof is under review. Please wait for admin approval.');
       error.statusCode = 403;
       throw error;
     }
 
+    // Step 3: Block login if account was REJECTED by admin (include reason if present)
     if (user.verificationStatus === 'REJECTED') {
       const reason = user.rejectionReason ? `: ${user.rejectionReason}` : '';
       const error = new Error(`Account registration rejected${reason}`);
@@ -117,7 +118,7 @@ class AuthService {
       throw error;
     }
 
-    // User is APPROVED: Issue access and refresh tokens
+    // Step 4: Account is APPROVED -> Issue short-lived access token (15m) and refresh token (7d)
     const accessToken = jwt.sign(
       { id: user.id, role: user.role, orgId: user.orgId, type: 'access' },
       process.env.JWT_ACCESS_SECRET,
@@ -130,6 +131,8 @@ class AuthService {
       { expiresIn: process.env.JWT_REFRESH_EXPIRY || '7d' }
     );
 
+    const orgSlug = user.org?.slug || (user.org?.name ? user.org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : null);
+
     return {
       accessToken,
       refreshToken,
@@ -140,21 +143,22 @@ class AuthService {
         lastName: user.lastName,
         role: user.role,
         orgId: user.orgId,
+        orgSlug,
         verificationStatus: user.verificationStatus,
       },
     };
   }
 
-  /**
-   * Exchanges a valid refresh token for a new access token.
-   */
+  // Validates a refresh token and generates a fresh access token
   async refreshToken(refreshTokenStr) {
+    // Check if token was previously revoked via logout
     if (isTokenRevoked(refreshTokenStr)) {
       const error = new Error('Refresh token has been revoked');
       error.statusCode = 401;
       throw error;
     }
 
+    // Verify JWT signature and expiration
     let decoded;
     try {
       decoded = jwt.verify(refreshTokenStr, process.env.JWT_REFRESH_SECRET);
@@ -170,6 +174,7 @@ class AuthService {
       throw error;
     }
 
+    // Ensure the user still exists and remains APPROVED
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user || user.verificationStatus !== 'APPROVED') {
       const error = new Error('User is no longer active or approved');
@@ -177,6 +182,7 @@ class AuthService {
       throw error;
     }
 
+    // Issue a new access token
     const accessToken = jwt.sign(
       { id: user.id, role: user.role, orgId: user.orgId, type: 'access' },
       process.env.JWT_ACCESS_SECRET,
@@ -186,9 +192,7 @@ class AuthService {
     return { accessToken };
   }
 
-  /**
-   * Invalidates a refresh token.
-   */
+  // Revokes the given refresh token on logout
   async logout(refreshTokenStr) {
     revokeToken(refreshTokenStr);
     return { message: 'Logged out successfully' };

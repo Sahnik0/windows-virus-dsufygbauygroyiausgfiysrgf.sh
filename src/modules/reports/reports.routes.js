@@ -5,6 +5,7 @@ const { requireRole } = require('../../middleware/role.middleware');
 
 const router = express.Router();
 
+// 1. Get organization summary report (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/summary',
   authenticateToken,
@@ -12,6 +13,7 @@ router.get(
   reportsController.getSummaryReport
 );
 
+// 2. Get organization fuel consumption report (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/fuel',
   authenticateToken,
@@ -19,6 +21,7 @@ router.get(
   reportsController.getFuelReport
 );
 
+// 3. Get organization cost per km report (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/cost-per-km',
   authenticateToken,
@@ -26,6 +29,7 @@ router.get(
   reportsController.getCostPerKmReport
 );
 
+// 4. Get per-vehicle cost report (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/vehicle-cost',
   authenticateToken,

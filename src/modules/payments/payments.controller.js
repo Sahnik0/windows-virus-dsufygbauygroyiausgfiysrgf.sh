@@ -1,6 +1,8 @@
 const paymentsService = require('./payments.service');
 
+// Controller handling Payment HTTP endpoints
 class PaymentsController {
+  // Processes payment for a trip
   async processTripPayment(req, res, next) {
     try {
       const result = await paymentsService.processTripPayment(
@@ -14,10 +16,11 @@ class PaymentsController {
     }
   }
 
+  // Receives and verifies Razorpay webhook notifications
   async handleWebhook(req, res, next) {
     try {
       const signature = req.headers['x-razorpay-signature'];
-      // Use rawBody buffer captured during express.json middleware
+      // Use rawBody buffer captured during express.json parsing middleware
       const rawBody = req.rawBody || (Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body)));
       const result = await paymentsService.handleRazorpayWebhook(
         rawBody,

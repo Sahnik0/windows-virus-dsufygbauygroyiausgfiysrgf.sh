@@ -1,14 +1,10 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 
+// Service class containing business logic for vehicle management
 class VehiclesService {
-  /**
-   * Registers a vehicle owned by the current user.
-   * ownerId is derived strictly from req.user.id.
-   */
-  async createVehicle(currentUser, { model, registrationNumber, seatingCapacity }) {
+  // Registers a new vehicle with ownerId derived strictly from current user token
+  async createVehicle(currentUser, { model, registrationNumber, seatingCapacity, fuelType = 'PETROL' }) {
+    // Check if registration number is already registered by any user
     const existing = await prisma.vehicle.findUnique({
       where: { registrationNumber },
     });
@@ -24,14 +20,14 @@ class VehiclesService {
         model,
         registrationNumber,
         seatingCapacity,
+        fuelType,
+        status: 'VERIFIED',
         ownerId: currentUser.id,
       },
     });
   }
 
-  /**
-   * Lists vehicles. User sees own vehicles; Org Admin can view all vehicles in their org via includeOrg flag.
-   */
+  // Lists vehicles (users see their own vehicles; admins can pass includeOrg=true to see org vehicles)
   async getVehicles(currentUser, includeOrg = false) {
     if (includeOrg && (currentUser.role === 'ORG_ADMIN' || currentUser.role === 'SUPER_ADMIN')) {
       const where = currentUser.role === 'ORG_ADMIN' ? { owner: { orgId: currentUser.orgId } } : {};
@@ -51,9 +47,7 @@ class VehiclesService {
     });
   }
 
-  /**
-   * Gets single vehicle by ID. Owner or Org Admin (same org) only.
-   */
+  // Fetches a single vehicle record by ID with ownership checks
   async getVehicleById(currentUser, vehicleId) {
     const vehicle = await prisma.vehicle.findUnique({
       where: { id: vehicleId },
@@ -66,12 +60,14 @@ class VehiclesService {
       throw error;
     }
 
+    // Regular users can only view their own vehicles
     if (currentUser.role === 'USER' && vehicle.ownerId !== currentUser.id) {
       const error = new Error('Forbidden: Cannot view another user’s vehicle');
       error.statusCode = 403;
       throw error;
     }
 
+    // Org admins can only view vehicles belonging to users in their org
     if (currentUser.role === 'ORG_ADMIN' && vehicle.owner.orgId !== currentUser.orgId) {
       const error = new Error('Forbidden: Vehicle belongs to another organization');
       error.statusCode = 403;
@@ -81,10 +77,8 @@ class VehiclesService {
     return vehicle;
   }
 
-  /**
-   * Updates vehicle. Owner-only.
-   */
-  async updateVehicle(currentUser, vehicleId, { model, registrationNumber, seatingCapacity }) {
+  // Updates vehicle model, registration number, seating capacity, fuelType, status (owner-only)
+  async updateVehicle(currentUser, vehicleId, { model, registrationNumber, seatingCapacity, fuelType, status }) {
     const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
 
     if (!vehicle) {
@@ -93,7 +87,7 @@ class VehiclesService {
       throw error;
     }
 
-    if (vehicle.ownerId !== currentUser.id) {
+    if (vehicle.ownerId !== currentUser.id && currentUser.role !== 'ORG_ADMIN' && currentUser.role !== 'SUPER_ADMIN') {
       const error = new Error('Forbidden: Only the vehicle owner can update vehicle details');
       error.statusCode = 403;
       throw error;
@@ -114,14 +108,13 @@ class VehiclesService {
         ...(model !== undefined && { model }),
         ...(registrationNumber !== undefined && { registrationNumber }),
         ...(seatingCapacity !== undefined && { seatingCapacity }),
+        ...(fuelType !== undefined && { fuelType }),
+        ...(status !== undefined && { status }),
       },
     });
   }
 
-  /**
-   * Deletes vehicle. Owner-only.
-   * Blocks deletion if referenced by an active ride (returns 409 Conflict).
-   */
+  // Deletes a vehicle record (owner-only; blocks deletion if attached to an active ride with 409 Conflict)
   async deleteVehicle(currentUser, vehicleId) {
     const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
 
@@ -137,7 +130,7 @@ class VehiclesService {
       throw error;
     }
 
-    // Check if vehicle is attached to an active ride (if Ride model exists)
+    // Check if vehicle is attached to an active published/full ride
     if (prisma.ride) {
       const activeRide = await prisma.ride.findFirst({
         where: {

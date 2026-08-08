@@ -1,20 +1,14 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 const fs = require('fs');
 
+// Service class containing business logic for user management and admin approvals
 class UsersService {
-  /**
-   * Lists users with org isolation.
-   * ORG_ADMIN sees only users in their own org. SUPER_ADMIN sees all (with optional orgId query filter).
-   */
+  // Lists users with strict org isolation (ORG_ADMIN sees own org users; SUPER_ADMIN sees all or filtered)
   async getAllUsers(currentUser, filterOrgId) {
     const where = {};
 
     if (currentUser.role === 'ORG_ADMIN') {
-      // Enforce org isolation derived from authenticated token
-      where.orgId = currentUser.orgId;
+      where.orgId = currentUser.orgId; // Restrict to caller's org
     } else if (currentUser.role === 'SUPER_ADMIN' && filterOrgId) {
       where.orgId = filterOrgId;
     }
@@ -27,6 +21,9 @@ class UsersService {
         firstName: true,
         lastName: true,
         phone: true,
+        employeeId: true,
+        carpoolAccess: true,
+        rating: true,
         role: true,
         orgId: true,
         verificationStatus: true,
@@ -36,9 +33,7 @@ class UsersService {
     });
   }
 
-  /**
-   * Gets single user details with strict org/self isolation.
-   */
+  // Fetches single user profile with authorization boundary checks
   async getUserById(currentUser, targetUserId) {
     const targetUser = await prisma.user.findUnique({
       where: { id: targetUserId },
@@ -48,6 +43,9 @@ class UsersService {
         firstName: true,
         lastName: true,
         phone: true,
+        employeeId: true,
+        carpoolAccess: true,
+        rating: true,
         role: true,
         orgId: true,
         verificationStatus: true,
@@ -65,13 +63,14 @@ class UsersService {
       throw error;
     }
 
-    // Role-based access rule checks
+    // USER role can only view their own profile
     if (currentUser.role === 'USER' && currentUser.id !== targetUserId) {
       const error = new Error('Forbidden: Users can only view their own record');
       error.statusCode = 403;
       throw error;
     }
 
+    // ORG_ADMIN can only view users inside their own organization
     if (currentUser.role === 'ORG_ADMIN' && targetUser.orgId !== currentUser.orgId) {
       const error = new Error('Forbidden: Cannot view users outside your organization');
       error.statusCode = 403;
@@ -81,11 +80,8 @@ class UsersService {
     return targetUser;
   }
 
-  /**
-   * Updates user profile (firstName, lastName, phone).
-   * USER/ORG_ADMIN can edit own record; ORG_ADMIN can edit any user in own org; SUPER_ADMIN any user.
-   */
-  async updateUser(currentUser, targetUserId, { firstName, lastName, phone }) {
+  // Updates profile info (firstName, lastName, phone, employeeId, carpoolAccess) with permissions check
+  async updateUser(currentUser, targetUserId, { firstName, lastName, phone, employeeId, carpoolAccess }) {
     const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
 
     if (!targetUser) {
@@ -94,7 +90,6 @@ class UsersService {
       throw error;
     }
 
-    // Authorization checks
     if (currentUser.role === 'USER' && currentUser.id !== targetUserId) {
       const error = new Error('Forbidden: Users can only update their own record');
       error.statusCode = 403;
@@ -113,6 +108,8 @@ class UsersService {
         ...(firstName !== undefined && { firstName }),
         ...(lastName !== undefined && { lastName }),
         ...(phone !== undefined && { phone }),
+        ...(employeeId !== undefined && { employeeId }),
+        ...(carpoolAccess !== undefined && { carpoolAccess }),
       },
       select: {
         id: true,
@@ -120,6 +117,8 @@ class UsersService {
         firstName: true,
         lastName: true,
         phone: true,
+        employeeId: true,
+        carpoolAccess: true,
         role: true,
         orgId: true,
         verificationStatus: true,
@@ -128,9 +127,7 @@ class UsersService {
     });
   }
 
-  /**
-   * Lists pending verification users for ORG_ADMIN (own org) or SUPER_ADMIN (all or specific org).
-   */
+  // Lists users waiting for admin approval (verificationStatus === PENDING)
   async getPendingUsers(currentUser, filterOrgId) {
     const where = { verificationStatus: 'PENDING' };
 
@@ -148,6 +145,7 @@ class UsersService {
         firstName: true,
         lastName: true,
         phone: true,
+        employeeId: true,
         role: true,
         orgId: true,
         verificationStatus: true,
@@ -158,9 +156,7 @@ class UsersService {
     });
   }
 
-  /**
-   * Returns metadata and streams uploaded ID proof document for a user.
-   */
+  // Retrieves the uploaded ID proof file path for admin viewing
   async getIdProof(currentUser, targetUserId) {
     const targetUser = await prisma.user.findUnique({
       where: { id: targetUserId },
@@ -190,9 +186,7 @@ class UsersService {
     };
   }
 
-  /**
-   * Approves a pending user account.
-   */
+  // Marks a user's verificationStatus as APPROVED
   async approveUser(currentUser, targetUserId) {
     const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
 
@@ -228,9 +222,7 @@ class UsersService {
     };
   }
 
-  /**
-   * Rejects a pending user account with a mandatory rejection reason.
-   */
+  // Marks a user's verificationStatus as REJECTED with a reason
   async rejectUser(currentUser, targetUserId, rejectionReason) {
     const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
 

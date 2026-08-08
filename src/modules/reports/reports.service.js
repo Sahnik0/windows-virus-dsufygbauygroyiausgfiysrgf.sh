@@ -1,16 +1,11 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 
-// Assumed per-vehicle average fuel efficiency model: 15 km per litre.
-// Source doc does not detail per-vehicle efficiency parameters, so 15 km/l is used as a documented constant.
+// Constant for assumed vehicle fuel efficiency: 15 kilometers per litre
 const ASSUMED_KM_PER_LITRE = 15.0;
 
+// Service class containing business logic for administrative reporting & analytics
 class ReportsService {
-  /**
-   * Helper to derive target orgId with strict access control.
-   */
+  // Helper method to derive target organization ID with strict ORG_ADMIN isolation
   _getOrgId(currentUser, filterOrgId) {
     if (currentUser.role === 'ORG_ADMIN') {
       return currentUser.orgId;
@@ -18,9 +13,7 @@ class ReportsService {
     return filterOrgId || currentUser.orgId;
   }
 
-  /**
-   * Summary Report: Total completed trips and total distance within date range.
-   */
+  // Summary Report: Returns total completed trips and total distance within an optional date range
   async getSummaryReport(currentUser, filterOrgId, startDate, endDate) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {
@@ -76,9 +69,7 @@ class ReportsService {
     };
   }
 
-  /**
-   * Fuel Report: Fuel consumption estimate = (totalDistance / assumedKmPerLitre) * org.fuelCostPerLitre
-   */
+  // Fuel Report: Calculates estimated fuel consumption (litres) and total cost using org.fuelCostPerLitre
   async getFuelReport(currentUser, filterOrgId, startDate, endDate) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {
@@ -112,9 +103,7 @@ class ReportsService {
     };
   }
 
-  /**
-   * Cost Per Km Report: Returns org default costPerKm and derived cost per km from fuel calculation.
-   */
+  // Cost Per Km Report: Returns org default costPerKm and calculated derived fuel cost per km
   async getCostPerKmReport(currentUser, filterOrgId) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {
@@ -144,9 +133,7 @@ class ReportsService {
     };
   }
 
-  /**
-   * Vehicle Cost Report: Per-vehicle breakdown of completed trips, total distance, and fuel cost.
-   */
+  // Vehicle Cost Report: Returns per-vehicle breakdown of completed trips, total distance, and fuel cost
   async getVehicleCostReport(currentUser, filterOrgId) {
     const orgId = this._getOrgId(currentUser, filterOrgId);
     if (!orgId) {

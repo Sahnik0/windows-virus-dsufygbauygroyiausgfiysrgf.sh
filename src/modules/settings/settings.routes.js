@@ -9,7 +9,7 @@ const {
 
 const router = express.Router();
 
-// Saved Places routes under /api/v1/settings/saved-places
+// 1. Create a personal saved place (e.g. Home, Office)
 router.post(
   '/saved-places',
   authenticateToken,
@@ -17,18 +17,21 @@ router.post(
   savedPlacesController.createSavedPlace
 );
 
+// 2. List personal saved places owned by user
 router.get(
   '/saved-places',
   authenticateToken,
   savedPlacesController.getSavedPlaces
 );
 
+// 3. Get single saved place details by ID
 router.get(
   '/saved-places/:id',
   authenticateToken,
   savedPlacesController.getSavedPlaceById
 );
 
+// 4. Update saved place details (owner-only)
 router.patch(
   '/saved-places/:id',
   authenticateToken,
@@ -36,6 +39,7 @@ router.patch(
   savedPlacesController.updateSavedPlace
 );
 
+// 5. Delete a saved place (owner-only)
 router.delete(
   '/saved-places/:id',
   authenticateToken,

@@ -7,7 +7,7 @@ const { rejectUserSchema, updateUserSchema } = require('./users.validation');
 
 const router = express.Router();
 
-// Admin pending approval routes
+// 1. Get users waiting for admin approval (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/pending',
   authenticateToken,
@@ -15,6 +15,7 @@ router.get(
   usersController.getPendingUsers
 );
 
+// 2. View/stream uploaded ID proof document for a pending user
 router.get(
   '/:id/id-proof',
   authenticateToken,
@@ -22,6 +23,7 @@ router.get(
   usersController.getIdProof
 );
 
+// 3. Approve a pending user account
 router.patch(
   '/:id/approve',
   authenticateToken,
@@ -29,6 +31,7 @@ router.patch(
   usersController.approveUser
 );
 
+// 4. Reject a pending user account with reason
 router.patch(
   '/:id/reject',
   authenticateToken,
@@ -37,7 +40,7 @@ router.patch(
   usersController.rejectUser
 );
 
-// General User management routes
+// 5. Get all users in organization (ORG_ADMIN / SUPER_ADMIN)
 router.get(
   '/',
   authenticateToken,
@@ -45,12 +48,14 @@ router.get(
   usersController.getAllUsers
 );
 
+// 6. Get user details by ID
 router.get(
   '/:id',
   authenticateToken,
   usersController.getUserById
 );
 
+// 7. Update user profile details
 router.patch(
   '/:id',
   authenticateToken,

@@ -4,19 +4,21 @@ const { authenticateToken } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
 
-// REST Chat endpoints under /api/v1/trips/:id/messages
+// 1. Get paginated chat history for a trip
 router.get(
   '/:id/messages',
   authenticateToken,
   chatController.getMessages
 );
 
+// 2. Send a new chat message via REST API
 router.post(
   '/:id/messages',
   authenticateToken,
   chatController.sendMessage
 );
 
+// 3. Mark unread messages in a trip as read
 router.patch(
   '/:id/messages/read',
   authenticateToken,

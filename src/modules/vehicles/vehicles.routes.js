@@ -6,6 +6,7 @@ const { createVehicleSchema, updateVehicleSchema } = require('./vehicles.validat
 
 const router = express.Router();
 
+// 1. Register a new vehicle (binds ownerId to req.user.id)
 router.post(
   '/',
   authenticateToken,
@@ -13,18 +14,21 @@ router.post(
   vehiclesController.createVehicle
 );
 
+// 2. List vehicles (returns user's vehicles, or all org vehicles if ?all=true for admin)
 router.get(
   '/',
   authenticateToken,
   vehiclesController.getVehicles
 );
 
+// 3. Get single vehicle details by ID
 router.get(
   '/:id',
   authenticateToken,
   vehiclesController.getVehicleById
 );
 
+// 4. Update vehicle details (owner-only)
 router.patch(
   '/:id',
   authenticateToken,
@@ -32,6 +36,7 @@ router.patch(
   vehiclesController.updateVehicle
 );
 
+// 5. Delete a vehicle (owner-only, blocked with 409 Conflict if active ride attached)
 router.delete(
   '/:id',
   authenticateToken,

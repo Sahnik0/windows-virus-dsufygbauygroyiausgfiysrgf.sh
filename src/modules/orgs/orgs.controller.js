@@ -1,6 +1,8 @@
 const orgsService = require('./orgs.service');
 
+// Controller handling Organization management HTTP requests
 class OrgsController {
+  // Handles creating a new organization
   async createOrg(req, res, next) {
     try {
       const result = await orgsService.createOrg(req.body);
@@ -10,6 +12,7 @@ class OrgsController {
     }
   }
 
+  // Handles listing all organizations
   async getAllOrgs(req, res, next) {
     try {
       const result = await orgsService.getAllOrgs();
@@ -19,6 +22,7 @@ class OrgsController {
     }
   }
 
+  // Handles provisioning an Org Admin for an organization
   async provisionOrgAdmin(req, res, next) {
     try {
       const result = await orgsService.provisionOrgAdmin(req.params.orgId, req.body);
@@ -28,6 +32,7 @@ class OrgsController {
     }
   }
 
+  // Handles listing all admins of an organization
   async getOrgAdmins(req, res, next) {
     try {
       const result = await orgsService.getOrgAdmins(req.params.orgId);
@@ -37,6 +42,7 @@ class OrgsController {
     }
   }
 
+  // Handles updating organization settings (fuel cost, cost per km)
   async updateOrgSettings(req, res, next) {
     try {
       const result = await orgsService.updateOrgSettings(req.user, req.params.orgId, req.body);

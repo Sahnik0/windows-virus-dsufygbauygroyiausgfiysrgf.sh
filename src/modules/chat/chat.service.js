@@ -1,10 +1,9 @@
 const prisma = require('../../config/prisma');
 const { assertTripParticipant } = require('../../utils/tripAuth');
 
+// Service class containing business logic for in-trip messaging
 class ChatService {
-  /**
-   * Sends a message for a trip (participant authorized).
-   */
+  // Saves a new chat message to the database for an authorized trip participant
   async sendMessage(currentUser, tripId, content) {
     await assertTripParticipant(currentUser.id, tripId);
 
@@ -24,9 +23,7 @@ class ChatService {
     return message;
   }
 
-  /**
-   * Retrieves trip chat history.
-   */
+  // Returns paginated chat history for a trip (ordered chronologically)
   async getMessages(currentUser, tripId, page = 1, limit = 50) {
     await assertTripParticipant(currentUser.id, tripId);
 
@@ -46,7 +43,7 @@ class ChatService {
     ]);
 
     return {
-      messages: messages.reverse(),
+      messages: messages.reverse(), // Reverse to present oldest-to-newest reading order
       pagination: {
         page,
         limit,
@@ -56,9 +53,7 @@ class ChatService {
     };
   }
 
-  /**
-   * Marks unread messages for caller as read.
-   */
+  // Marks unread messages from other participants as read
   async markAsRead(currentUser, tripId) {
     await assertTripParticipant(currentUser.id, tripId);
 

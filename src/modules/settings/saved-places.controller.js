@@ -1,6 +1,8 @@
 const savedPlacesService = require('./saved-places.service');
 
+// Controller handling Saved Places HTTP endpoints
 class SavedPlacesController {
+  // Creates a new saved place
   async createSavedPlace(req, res, next) {
     try {
       const result = await savedPlacesService.createSavedPlace(req.user, req.body);
@@ -10,6 +12,7 @@ class SavedPlacesController {
     }
   }
 
+  // Lists all personal saved places
   async getSavedPlaces(req, res, next) {
     try {
       const result = await savedPlacesService.getSavedPlaces(req.user);
@@ -19,6 +22,7 @@ class SavedPlacesController {
     }
   }
 
+  // Gets a single saved place by ID
   async getSavedPlaceById(req, res, next) {
     try {
       const result = await savedPlacesService.getSavedPlaceById(req.user, req.params.id);
@@ -28,6 +32,7 @@ class SavedPlacesController {
     }
   }
 
+  // Updates saved place details
   async updateSavedPlace(req, res, next) {
     try {
       const result = await savedPlacesService.updateSavedPlace(req.user, req.params.id, req.body);
@@ -37,6 +42,7 @@ class SavedPlacesController {
     }
   }
 
+  // Deletes a saved place
   async deleteSavedPlace(req, res, next) {
     try {
       const result = await savedPlacesService.deleteSavedPlace(req.user, req.params.id);

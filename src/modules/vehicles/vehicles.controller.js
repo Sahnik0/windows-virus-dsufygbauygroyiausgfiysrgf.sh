@@ -1,6 +1,8 @@
 const vehiclesService = require('./vehicles.service');
 
+// Controller handling Vehicle management HTTP endpoints
 class VehiclesController {
+  // Registers a new vehicle
   async createVehicle(req, res, next) {
     try {
       const result = await vehiclesService.createVehicle(req.user, req.body);
@@ -10,6 +12,7 @@ class VehiclesController {
     }
   }
 
+  // Lists vehicles owned by user (or org-wide for admins)
   async getVehicles(req, res, next) {
     try {
       const includeOrg = req.query.all === 'true';
@@ -20,6 +23,7 @@ class VehiclesController {
     }
   }
 
+  // Gets single vehicle by ID
   async getVehicleById(req, res, next) {
     try {
       const result = await vehiclesService.getVehicleById(req.user, req.params.id);
@@ -29,6 +33,7 @@ class VehiclesController {
     }
   }
 
+  // Updates vehicle info
   async updateVehicle(req, res, next) {
     try {
       const result = await vehiclesService.updateVehicle(req.user, req.params.id, req.body);
@@ -38,6 +43,7 @@ class VehiclesController {
     }
   }
 
+  // Deletes a vehicle record
   async deleteVehicle(req, res, next) {
     try {
       const result = await vehiclesService.deleteVehicle(req.user, req.params.id);

@@ -11,7 +11,7 @@ const {
 
 const router = express.Router();
 
-// Offer a ride
+// 1. Offer/publish a new ride
 router.post(
   '/',
   authenticateToken,
@@ -19,7 +19,7 @@ router.post(
   ridesController.createRide
 );
 
-// Find a ride (search)
+// 2. Search for available published rides
 router.post(
   '/search',
   authenticateToken,
@@ -27,31 +27,31 @@ router.post(
   ridesController.searchRides
 );
 
-// Nearby drivers discovery
+// 3. Passenger discovery: Nearby drivers around pickup location
 router.get(
   '/nearby-drivers',
   authenticateToken,
   ridesController.getNearbyDrivers
 );
 
-// Mount price negotiations sub-router (/api/v1/rides/:id/negotiations)
+// 4. Mount price negotiations sub-router under /api/v1/rides/:id/negotiations
 router.use('/:id/negotiations', negotiationsRouter);
 
-// Nearby passengers discovery for driver
+// 5. Driver discovery: Nearby passenger saved places around ride pickup
 router.get(
   '/:id/nearby-passengers',
   authenticateToken,
   ridesController.getNearbyPassengers
 );
 
-// Get single ride details
+// 6. Get single ride details
 router.get(
   '/:id',
   authenticateToken,
   ridesController.getRideById
 );
 
-// Join request routes
+// 7. Submit a join request for a ride
 router.post(
   '/:id/join-requests',
   authenticateToken,
@@ -59,18 +59,21 @@ router.post(
   ridesController.createJoinRequest
 );
 
+// 8. List pending join requests for a ride (driver-only)
 router.get(
   '/:id/join-requests',
   authenticateToken,
   ridesController.getJoinRequests
 );
 
+// 9. Accept a join request and book seat
 router.patch(
   '/:id/join-requests/:requestId/accept',
   authenticateToken,
   ridesController.acceptJoinRequest
 );
 
+// 10. Decline a join request
 router.patch(
   '/:id/join-requests/:requestId/decline',
   authenticateToken,

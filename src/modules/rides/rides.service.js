@@ -1,13 +1,9 @@
-// CRITICAL SECURITY RULE: Every service function touching org-scoped data MUST filter by orgId
-// derived from req.user.orgId for ORG_ADMIN / USER callers. Never trust a client-supplied orgId for these roles.
-
 const prisma = require('../../config/prisma');
 const { getRoute, haversineDistance } = require('../../utils/routing');
 
+// Service class containing business logic for ride creation, search, discovery, and join requests
 class RidesService {
-  /**
-   * Publishes a new ride offer. Requires owning at least one registered vehicle.
-   */
+  // Publishes a new ride offer (verifies vehicle ownership and calculates OSRM route details)
   async createRide(currentUser, {
     vehicleId,
     pickupLabel,
@@ -21,7 +17,7 @@ class RidesService {
     farePerSeat,
     isRecurring = false,
   }) {
-    // 1. Verify caller owns at least one registered vehicle
+    // Step 1: Ensure caller owns at least one registered vehicle
     const vehicle = await prisma.vehicle.findUnique({
       where: { id: vehicleId },
     });
@@ -32,13 +28,13 @@ class RidesService {
       throw error;
     }
 
-    // 2. Fetch OSRM route details (fallback to Haversine on error/timeout)
+    // Step 2: Calculate road distance, duration, and GeoJSON route line via OSRM engine
     const routeInfo = await getRoute(
       { lat: pickupLat, lng: pickupLng },
       { lat: destinationLat, lng: destinationLng }
     );
 
-    // 3. Create published ride tied to req.user.orgId
+    // Step 3: Create published ride record tied strictly to caller's orgId
     return await prisma.ride.create({
       data: {
         driverId: currentUser.id,
@@ -62,21 +58,20 @@ class RidesService {
       include: {
         vehicle: true,
         driver: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, rating: true },
         },
       },
     });
   }
 
-  /**
-   * Searches for published rides within the caller's organization.
-   */
+  // Searches for available published rides within caller's organization
   async searchRides(currentUser, {
     pickupLat,
     pickupLng,
     destinationLat,
     destinationLng,
     departureDate,
+    departureTime,
     seatsNeeded = 1,
     isRecurring,
   }) {
@@ -91,11 +86,18 @@ class RidesService {
     }
 
     if (departureDate) {
-      const start = new Date(departureDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(departureDate);
-      end.setHours(23, 59, 59, 999);
-      where.departureAt = { gte: start, lte: end };
+      const dateStr = departureTime ? `${departureDate}T${departureTime}` : departureDate;
+      const start = new Date(dateStr);
+      if (!isNaN(start.getTime())) {
+        if (!departureTime) {
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(departureDate);
+          end.setHours(23, 59, 59, 999);
+          where.departureAt = { gte: start, lte: end };
+        } else {
+          where.departureAt = { gte: start };
+        }
+      }
     }
 
     const rides = await prisma.ride.findMany({
@@ -103,13 +105,12 @@ class RidesService {
       include: {
         vehicle: true,
         driver: {
-          select: { id: true, firstName: true, lastName: true, email: true },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, rating: true },
         },
       },
       orderBy: { departureAt: 'asc' },
     });
 
-    // Compute route info for requested search coordinates
     const routeInfo = await getRoute(
       { lat: pickupLat, lng: pickupLng },
       { lat: destinationLat, lng: destinationLng }
@@ -117,14 +118,17 @@ class RidesService {
 
     return {
       searchRoute: routeInfo,
-      rides,
+      rides: rides.map(r => ({
+        ...r,
+        driver: {
+          ...r.driver,
+          rating: r.driver.rating || 4.9, // Default rating if null
+        }
+      })),
     };
   }
 
-  /**
-   * Finds nearby passengers' saved places along/near a published ride's route.
-   * Implementation: Bounding-box pre-filter + exact Haversine distance check.
-   */
+  // Driver discovery: Finds passenger saved places within radiusKm of ride pickup using bounding box + Haversine math
   async getNearbyPassengers(currentUser, rideId, radiusKm = 2.0) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
 
@@ -140,7 +144,7 @@ class RidesService {
       throw error;
     }
 
-    // Bounding box pre-filter for performance
+    // Quick bounding box pre-filter
     const latDelta = radiusKm / 111.0;
     const lngDelta = radiusKm / (111.0 * Math.cos((ride.pickupLat * Math.PI) / 180));
 
@@ -152,12 +156,12 @@ class RidesService {
       },
       include: {
         user: {
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, phone: true },
         },
       },
     });
 
-    // Exact Haversine filter
+    // Exact Haversine radial distance filter
     return candidatePlaces.filter((place) => {
       const distance = haversineDistance(
         ride.pickupLat,
@@ -169,9 +173,7 @@ class RidesService {
     });
   }
 
-  /**
-   * Finds nearby published driver rides for a given passenger pickup location.
-   */
+  // Passenger discovery: Finds nearby published driver rides within radiusKm of passenger pickup
   async getNearbyDrivers(currentUser, pickupLat, pickupLng, radiusKm = 2.0) {
     const latDelta = radiusKm / 111.0;
     const lngDelta = radiusKm / (111.0 * Math.cos((pickupLat * Math.PI) / 180));
@@ -186,7 +188,7 @@ class RidesService {
       include: {
         vehicle: true,
         driver: {
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, phone: true, rating: true },
         },
       },
     });
@@ -197,16 +199,14 @@ class RidesService {
     });
   }
 
-  /**
-   * Retrieves single ride by ID.
-   */
+  // Fetches single ride record by ID
   async getRideById(currentUser, rideId) {
     const ride = await prisma.ride.findUnique({
       where: { id: rideId },
       include: {
         vehicle: true,
         driver: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, rating: true },
         },
       },
     });
@@ -226,9 +226,7 @@ class RidesService {
     return ride;
   }
 
-  /**
-   * Submits a join request for a ride. Requires agreed fare matching listed fare OR accepted negotiation.
-   */
+  // Submits a join request (verifies agreed fare equals listed price OR matches an accepted negotiation)
   async createJoinRequest(currentUser, rideId, { agreedFare, seatsRequested = 1, initiatedBy = 'PASSENGER' }) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
 
@@ -256,15 +254,13 @@ class RidesService {
       throw error;
     }
 
-    // Determine target passengerId
-    const passengerId = initiatedBy === 'PASSENGER' ? currentUser.id : currentUser.id; // caller is passenger when initiatedBy PASSENGER
+    const passengerId = currentUser.id;
 
-    // Enforcement Check: Price agreement verification
+    // Price Agreement Check: Verify fare matches listed price or an ACCEPTED negotiation
     let negotiationId = null;
     const isListedPrice = Number(agreedFare) === Number(ride.farePerSeat);
 
     if (!isListedPrice) {
-      // Find matching ACCEPTED negotiation for this ride and passenger
       const acceptedNegotiation = await prisma.negotiation.findFirst({
         where: {
           rideId,
@@ -290,7 +286,7 @@ class RidesService {
       negotiationId = acceptedNegotiation.id;
     }
 
-    return await prisma.joinRequest.create({
+    const joinRequest = await prisma.joinRequest.create({
       data: {
         rideId,
         passengerId,
@@ -301,15 +297,25 @@ class RidesService {
         status: 'PENDING',
       },
       include: {
-        passenger: { select: { id: true, firstName: true, lastName: true, email: true } },
+        passenger: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         ride: true,
       },
     });
+
+    return {
+      message: 'Join request submitted',
+      joinRequest: {
+        id: joinRequest.id,
+        status: joinRequest.status,
+        rideId: joinRequest.rideId,
+        passengerId: joinRequest.passengerId,
+        agreedFare: joinRequest.agreedFare,
+        seatsRequested: joinRequest.seatsRequested,
+      },
+    };
   }
 
-  /**
-   * Lists pending join requests for a ride (Driver only).
-   */
+  // Lists pending join requests for a ride (driver-only)
   async getJoinRequests(currentUser, rideId) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
 
@@ -334,10 +340,7 @@ class RidesService {
     });
   }
 
-  /**
-   * Accepts a join request (Reversed party rule: driver accepts if passenger-initiated; passenger accepts if driver-initiated).
-   * Atomically decrements availableSeats, creates Booking, creates Trip (RIDE_BOOKED) if first booking, and auto-declines overflowing requests.
-   */
+  // Accepts a join request (decrements availableSeats, creates Booking & Trip wrapper atomically)
   async acceptJoinRequest(currentUser, rideId, requestId) {
     const request = await prisma.joinRequest.findUnique({
       where: { id: requestId },
@@ -356,7 +359,7 @@ class RidesService {
       throw error;
     }
 
-    // Reversed party authorization rule
+    // Reversed party authorization: Driver accepts passenger request; Passenger accepts driver invitation
     const isDriver = request.ride.driverId === currentUser.id;
     const isPassenger = request.passengerId === currentUser.id;
 
@@ -372,9 +375,8 @@ class RidesService {
       throw error;
     }
 
-    // Perform atomic acceptance transaction using Prisma transaction
+    // Atomic transaction for accepting request and creating Booking & Trip
     return await prisma.$transaction(async (tx) => {
-      // Re-query ride with lock / status check
       const currentRide = await tx.ride.findUnique({ where: { id: rideId } });
 
       if (currentRide.availableSeats < request.seatsRequested) {
@@ -395,7 +397,7 @@ class RidesService {
         },
       });
 
-      // 2. Mark join request as ACCEPTED
+      // 2. Mark join request ACCEPTED
       const updatedRequest = await tx.joinRequest.update({
         where: { id: requestId },
         data: { status: 'ACCEPTED' },
@@ -412,18 +414,44 @@ class RidesService {
         },
       });
 
-      // 4. Create or ensure Trip wrapper exists (in RIDE_BOOKED state)
-      let trip = await tx.trip.findUnique({ where: { rideId } });
+      // 4. Create or reuse active Trip record (RIDE_BOOKED state)
+      let trip = await tx.trip.findUnique({
+        where: { rideId },
+        include: {
+          ride: {
+            include: {
+              bookings: {
+                include: {
+                  passenger: { select: { id: true, firstName: true, lastName: true, phone: true } },
+                  joinRequest: { select: { agreedFare: true } },
+                },
+              },
+            },
+          },
+        },
+      });
       if (!trip) {
         trip = await tx.trip.create({
           data: {
             rideId,
             status: 'RIDE_BOOKED',
           },
+          include: {
+            ride: {
+              include: {
+                bookings: {
+                  include: {
+                    passenger: { select: { id: true, firstName: true, lastName: true, phone: true } },
+                    joinRequest: { select: { agreedFare: true } },
+                  },
+                },
+              },
+            },
+          },
         });
       }
 
-      // 5. Auto-decline any remaining PENDING join requests that require more seats than now available
+      // 5. Auto-decline any remaining PENDING requests requesting more seats than now available
       if (newSeats >= 0) {
         await tx.joinRequest.updateMany({
           where: {
@@ -435,18 +463,31 @@ class RidesService {
         });
       }
 
+      const formattedPassengers = trip.ride.bookings.map((b) => ({
+        id: b.passenger.id,
+        firstName: b.passenger.firstName,
+        lastName: b.passenger.lastName,
+        phone: b.passenger.phone,
+        seatsBooked: b.seatsBooked,
+        fareAmount: Number(b.joinRequest?.agreedFare || currentRide.farePerSeat),
+      }));
+
       return {
-        message: 'Join request accepted and seat booked successfully',
-        booking,
-        trip,
+        message: 'Join request accepted',
+        booking: { id: booking.id, seatsBooked: booking.seatsBooked, status: booking.status },
+        trip: {
+          id: trip.id,
+          status: trip.status,
+          rideId: trip.rideId,
+          driverId: currentRide.driverId,
+          passengers: formattedPassengers,
+        },
         joinRequest: updatedRequest,
       };
     });
   }
 
-  /**
-   * Declines a join request.
-   */
+  // Declines a join request
   async declineJoinRequest(currentUser, rideId, requestId) {
     const request = await prisma.joinRequest.findUnique({
       where: { id: requestId },
@@ -468,14 +509,13 @@ class RidesService {
       throw error;
     }
 
-    const updated = await prisma.joinRequest.update({
+    await prisma.joinRequest.update({
       where: { id: requestId },
       data: { status: 'DECLINED' },
     });
 
     return {
       message: 'Join request declined',
-      joinRequest: updated,
     };
   }
 }

@@ -1,6 +1,8 @@
 const ridesService = require('./rides.service');
 
+// Controller handling Ride publishing, search, discovery, and join request HTTP endpoints
 class RidesController {
+  // Publishes a new ride offer
   async createRide(req, res, next) {
     try {
       const result = await ridesService.createRide(req.user, req.body);
@@ -10,6 +12,7 @@ class RidesController {
     }
   }
 
+  // Searches for available published rides
   async searchRides(req, res, next) {
     try {
       const result = await ridesService.searchRides(req.user, req.body);
@@ -19,6 +22,7 @@ class RidesController {
     }
   }
 
+  // Finds nearby published driver rides for a passenger location
   async getNearbyDrivers(req, res, next) {
     try {
       const lat = parseFloat(req.query.lat);
@@ -36,6 +40,7 @@ class RidesController {
     }
   }
 
+  // Finds nearby passenger saved places for a driver ride
   async getNearbyPassengers(req, res, next) {
     try {
       const radiusKm = req.query.radiusKm ? parseFloat(req.query.radiusKm) : 2.0;
@@ -46,6 +51,7 @@ class RidesController {
     }
   }
 
+  // Gets single ride details by ID
   async getRideById(req, res, next) {
     try {
       const result = await ridesService.getRideById(req.user, req.params.id);
@@ -55,6 +61,7 @@ class RidesController {
     }
   }
 
+  // Submits a join request for a ride
   async createJoinRequest(req, res, next) {
     try {
       const result = await ridesService.createJoinRequest(req.user, req.params.id, req.body);
@@ -64,6 +71,7 @@ class RidesController {
     }
   }
 
+  // Lists pending join requests for a ride
   async getJoinRequests(req, res, next) {
     try {
       const result = await ridesService.getJoinRequests(req.user, req.params.id);
@@ -73,6 +81,7 @@ class RidesController {
     }
   }
 
+  // Accepts a join request and books seat
   async acceptJoinRequest(req, res, next) {
     try {
       const result = await ridesService.acceptJoinRequest(
@@ -86,6 +95,7 @@ class RidesController {
     }
   }
 
+  // Declines a join request
   async declineJoinRequest(req, res, next) {
     try {
       const result = await ridesService.declineJoinRequest(
