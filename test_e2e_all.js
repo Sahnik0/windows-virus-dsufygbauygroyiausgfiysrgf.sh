@@ -185,6 +185,71 @@ async function runE2ETests() {
     console.assert(Array.isArray(vehicleCostData.vehicles), 'Vehicle report returns array');
     console.log('✅ Vehicle cost report passed');
 
+    // 5. Dynamic Multi-Tenant Org & Admin Provisioning Test
+    console.log('\n--- 5. Dynamic Multi-Tenant Org & Admin Provisioning Test ---');
+    const timestamp = Date.now();
+    const dynamicOrgName = `Dynamic Global Tenant ${timestamp}`;
+    const dynamicSlug = `dynamic-tenant-${timestamp}`;
+    const dynamicAdminEmail = `admin.${timestamp}@dynamic-tenant.com`;
+    const dynamicAdminPassword = `DynamicPass${timestamp}!`;
+
+    // Step A: Create Dynamic Org (POST /api/v1/orgs)
+    const createOrgRes = await fetch(`${baseUrl}/orgs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        name: dynamicOrgName,
+        slug: dynamicSlug,
+        status: 'ACTIVE',
+      }),
+    });
+    const createOrgData = await createOrgRes.json();
+    console.assert(createOrgRes.status === 201, 'Dynamic org creation succeeds with 201');
+    const createdOrgId = createOrgData.org ? createOrgData.org.id : createOrgData.id;
+    console.assert(createdOrgId, 'Created org returns ID');
+    console.log(`✅ Step A: Created Dynamic Org (${dynamicOrgName}, id: ${createdOrgId}) passed`);
+
+    // Step B: Provision Org Admin (POST /api/v1/orgs/:orgId/admins)
+    const provisionAdminRes = await fetch(`${baseUrl}/orgs/${createdOrgId}/admins`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        email: dynamicAdminEmail,
+        password: dynamicAdminPassword,
+        firstName: 'Dynamic',
+        lastName: 'Admin',
+        phone: '+19876543210',
+      }),
+    });
+    const provisionAdminData = await provisionAdminRes.json();
+    console.assert(provisionAdminRes.status === 201, 'Dynamic admin provisioning succeeds with 201');
+    const provisionedUser = provisionAdminData.user || provisionAdminData;
+    console.assert(provisionedUser.role === 'ORG_ADMIN', 'Provisioned user role is ORG_ADMIN');
+    console.assert(provisionedUser.verificationStatus === 'APPROVED', 'Provisioned admin is APPROVED');
+    console.log(`✅ Step B: Provisioned Org Admin (${dynamicAdminEmail}) passed`);
+
+    // Step C: Authenticate Provisioned Org Admin (POST /api/v1/auth/login)
+    const dynamicAdminLoginRes = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: dynamicAdminEmail,
+        password: dynamicAdminPassword,
+      }),
+    });
+    const dynamicAdminLoginData = await dynamicAdminLoginRes.json();
+    console.assert(dynamicAdminLoginRes.status === 200, 'Provisioned Org Admin login succeeds with 200');
+    console.assert(dynamicAdminLoginData.accessToken, 'Login returns accessToken');
+    console.assert(dynamicAdminLoginData.user.role === 'ORG_ADMIN', 'Login user role is ORG_ADMIN');
+    console.assert(dynamicAdminLoginData.user.orgSlug === dynamicSlug, 'Login user orgSlug matches created slug');
+    console.log('✅ Step C: Dynamic Org Admin login & token generation passed');
+
     console.log('\n🎉 ALL E2E VERIFICATION TESTS PASSED SUCCESSFULLY!');
   } finally {
     server.close();

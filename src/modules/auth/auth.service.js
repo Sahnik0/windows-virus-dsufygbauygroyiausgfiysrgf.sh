@@ -7,6 +7,8 @@ const { revokeToken, isTokenRevoked } = require('../../utils/tokenRevocation');
 class AuthService {
   // Registers a new USER account linked to an existing organization
   async register({ email, password, firstName, lastName, phone, orgId, employeeId }) {
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Step 1: Make sure the target organization exists in database
     const org = await prisma.org.findUnique({ where: { id: orgId } });
     if (!org) {
@@ -15,8 +17,10 @@ class AuthService {
       throw error;
     }
 
-    // Step 2: Prevent duplicate email registration
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Step 2: Prevent duplicate email registration (case-insensitive)
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    });
     if (existingUser) {
       const error = new Error('Email is already registered');
       error.statusCode = 400;
@@ -29,7 +33,7 @@ class AuthService {
     // Step 4: Create new user record with PENDING verification status
     const user = await prisma.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         passwordHash,
         firstName,
         lastName,
@@ -90,8 +94,10 @@ class AuthService {
 
   // Verifies user credentials and checks admin approval status before issuing login tokens
   async login(email, password) {
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
       include: { org: true },
     });
 
@@ -102,14 +108,14 @@ class AuthService {
       throw error;
     }
 
-    // Step 2: Block login if account is still PENDING admin review
-    if (user.verificationStatus === 'PENDING') {
+    // Step 2: Block login if account is still PENDING admin review (unless SUPER_ADMIN or ORG_ADMIN)
+    if (user.verificationStatus === 'PENDING' && user.role !== 'SUPER_ADMIN' && user.role !== 'ORG_ADMIN') {
       const error = new Error('Your ID proof is under review. Please wait for admin approval.');
       error.statusCode = 403;
       throw error;
     }
 
-    // Step 3: Block login if account was REJECTED by admin (include reason if present)
+    // Step 3: Block login if account was REJECTED by admin
     if (user.verificationStatus === 'REJECTED') {
       const reason = user.rejectionReason ? `: ${user.rejectionReason}` : '';
       const error = new Error(`Account registration rejected${reason}`);
@@ -118,7 +124,7 @@ class AuthService {
       throw error;
     }
 
-    // Step 4: Account is APPROVED -> Issue short-lived access token (15m) and refresh token (7d)
+    // Step 4: Account is APPROVED (or Admin) -> Issue access token (15m) and refresh token (7d)
     const accessToken = jwt.sign(
       { id: user.id, role: user.role, orgId: user.orgId, type: 'access' },
       process.env.JWT_ACCESS_SECRET,
@@ -174,9 +180,9 @@ class AuthService {
       throw error;
     }
 
-    // Ensure the user still exists and remains APPROVED
+    // Ensure the user still exists and remains APPROVED (or Admin)
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
-    if (!user || user.verificationStatus !== 'APPROVED') {
+    if (!user || (user.verificationStatus !== 'APPROVED' && user.role !== 'SUPER_ADMIN' && user.role !== 'ORG_ADMIN')) {
       const error = new Error('User is no longer active or approved');
       error.statusCode = 401;
       throw error;

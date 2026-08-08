@@ -6,7 +6,14 @@ class OrgsController {
   async createOrg(req, res, next) {
     try {
       const result = await orgsService.createOrg(req.body);
-      res.status(201).json(result);
+      res.status(201).json({
+        message: 'Organization created successfully',
+        org: result,
+        id: result.id,
+        name: result.name,
+        slug: result.slug,
+        status: result.status,
+      });
     } catch (error) {
       next(error);
     }
@@ -26,7 +33,15 @@ class OrgsController {
   async provisionOrgAdmin(req, res, next) {
     try {
       const result = await orgsService.provisionOrgAdmin(req.params.orgId, req.body);
-      res.status(201).json(result);
+      res.status(201).json({
+        message: 'Org Admin provisioned successfully',
+        user: result,
+        id: result.id,
+        email: result.email,
+        role: result.role,
+        orgId: result.orgId,
+        verificationStatus: result.verificationStatus,
+      });
     } catch (error) {
       next(error);
     }

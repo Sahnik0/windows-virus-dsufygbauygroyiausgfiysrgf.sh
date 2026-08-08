@@ -5,8 +5,15 @@ const bcrypt = require('bcrypt');
 class OrgsService {
   // Creates a new organization record (SUPER_ADMIN only)
   async createOrg({ name, slug, status = 'ACTIVE', fuelCostPerLitre, costPerKmDefault }) {
-    const finalSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    
+    const rawSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    let finalSlug = rawSlug;
+
+    // Check if slug is unique, append timestamp if duplicate exists
+    const existingSlug = await prisma.org.findFirst({ where: { slug: finalSlug } });
+    if (existingSlug) {
+      finalSlug = `${rawSlug}-${Date.now()}`;
+    }
+
     return await prisma.org.create({
       data: {
         name,
@@ -38,6 +45,8 @@ class OrgsService {
 
   // Provisions an Org Admin account (automatically APPROVED without ID proof upload)
   async provisionOrgAdmin(orgId, { email, password, firstName, lastName, phone }) {
+    const normalizedEmail = email.trim().toLowerCase();
+
     const org = await prisma.org.findUnique({ where: { id: orgId } });
     if (!org) {
       const error = new Error('Organization not found');
@@ -45,7 +54,9 @@ class OrgsService {
       throw error;
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    });
     if (existingUser) {
       const error = new Error('Email is already registered');
       error.statusCode = 400;
@@ -56,7 +67,7 @@ class OrgsService {
 
     const admin = await prisma.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         passwordHash,
         firstName,
         lastName,
