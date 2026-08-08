@@ -370,7 +370,6 @@ class RidesService {
         passengerId,
         initiatedBy,
         agreedFare,
-        negotiationId,
         seatsRequested,
         status: 'PENDING',
       },
@@ -379,6 +378,13 @@ class RidesService {
         ride: true,
       },
     });
+
+    if (negotiationId) {
+      await prisma.negotiation.update({
+        where: { id: negotiationId },
+        data: { requestId: joinRequest.id },
+      });
+    }
 
     return {
       message: 'Join request submitted',
