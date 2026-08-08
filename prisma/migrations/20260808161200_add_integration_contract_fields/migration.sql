@@ -1,15 +1,11 @@
--- CreateEnum safely
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrgStatus') THEN
-        CREATE TYPE "OrgStatus" AS ENUM ('ACTIVE', 'PENDING_SETUP', 'SUSPENDED');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'FuelType') THEN
-        CREATE TYPE "FuelType" AS ENUM ('PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'VehicleStatus') THEN
-        CREATE TYPE "VehicleStatus" AS ENUM ('VERIFIED', 'PENDING', 'REJECTED');
-    END IF;
-END $$;
+-- CreateEnum
+CREATE TYPE "OrgStatus" AS ENUM ('ACTIVE', 'PENDING_SETUP', 'SUSPENDED');
+
+-- CreateEnum
+CREATE TYPE "FuelType" AS ENUM ('PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID');
+
+-- CreateEnum
+CREATE TYPE "VehicleStatus" AS ENUM ('VERIFIED', 'PENDING', 'REJECTED');
 
 -- AlterTable
 ALTER TABLE "Org" ADD COLUMN IF NOT EXISTS "slug" TEXT,

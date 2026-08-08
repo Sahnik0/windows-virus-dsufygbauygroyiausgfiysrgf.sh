@@ -29,6 +29,16 @@ class OrgsController {
     }
   }
 
+  // Handles listing active organizations for public sign-up dropdown
+  async getActiveOrgsPublic(req, res, next) {
+    try {
+      const result = await orgsService.getActiveOrgsPublic();
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Handles getting a single organization by ID
   async getOrgById(req, res, next) {
     try {
