@@ -96,6 +96,7 @@ enum NegotiationStatus {
   OPEN
   ACCEPTED
   REJECTED
+  EXPIRED
 }
 
 // Which side submitted a negotiation offer

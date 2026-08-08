@@ -72,7 +72,7 @@ class RidesService {
 
   // Lists published ride offers created by caller with active negotiations and join requests
   async getMyOfferedRides(currentUser) {
-    return await prisma.ride.findMany({
+    const rides = await prisma.ride.findMany({
       where: {
         driverId: currentUser.id,
         status: { in: ['SCHEDULED', 'ACTIVE'] },
@@ -97,6 +97,29 @@ class RidesService {
       },
       orderBy: { departureAt: 'desc' },
     });
+
+    const now = Date.now();
+    for (const ride of rides) {
+      if (ride.negotiations && ride.negotiations.length > 0) {
+        const active = [];
+        const departureTime = new Date(ride.departureAt).getTime();
+        const rideCreatedTime = new Date(ride.createdAt).getTime();
+        const isScheduled = ride.isRecurring || (departureTime - rideCreatedTime > 5 * 60 * 1000);
+
+        for (const neg of ride.negotiations) {
+          const createdAt = new Date(neg.createdAt).getTime();
+          const isExpired = isScheduled ? now >= departureTime : now - createdAt > 10 * 60 * 1000;
+          if (isExpired) {
+            await prisma.negotiation.update({ where: { id: neg.id }, data: { status: 'EXPIRED' } });
+          } else {
+            active.push(neg);
+          }
+        }
+        ride.negotiations = active;
+      }
+    }
+
+    return rides;
   }
   async searchRides(currentUser, {
     pickupLat,
@@ -334,16 +357,16 @@ class RidesService {
 
     const passengerId = currentUser.id;
 
-    // Price Agreement Check: Verify fare matches listed price or an ACCEPTED negotiation
+    // Price Agreement Check: Verify fare matches listed price or an active/accepted negotiation
     let negotiationId = null;
     const isListedPrice = Number(agreedFare) === Number(ride.farePerSeat);
 
     if (!isListedPrice) {
-      const acceptedNegotiation = await prisma.negotiation.findFirst({
+      const negotiation = await prisma.negotiation.findFirst({
         where: {
           rideId,
           passengerId,
-          status: 'ACCEPTED',
+          status: { in: ['ACCEPTED', 'OPEN'] },
         },
         include: {
           offers: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -351,17 +374,25 @@ class RidesService {
       });
 
       if (
-        !acceptedNegotiation ||
-        !acceptedNegotiation.offers[0] ||
-        Number(acceptedNegotiation.offers[0].amount) !== Number(agreedFare)
+        !negotiation ||
+        !negotiation.offers[0] ||
+        Number(negotiation.offers[0].amount) !== Number(agreedFare)
       ) {
         const error = new Error(
-          'Join request agreed fare does not match listed price and no accepted price negotiation exists at this fare'
+          'Join request agreed fare does not match listed price and no price negotiation exists at this fare'
         );
         error.statusCode = 400;
         throw error;
       }
-      negotiationId = acceptedNegotiation.id;
+
+      negotiationId = negotiation.id;
+
+      if (negotiation.status === 'OPEN') {
+        await prisma.negotiation.update({
+          where: { id: negotiation.id },
+          data: { status: 'ACCEPTED' },
+        });
+      }
     }
 
     const joinRequest = await prisma.joinRequest.create({

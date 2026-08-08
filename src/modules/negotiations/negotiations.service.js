@@ -2,6 +2,49 @@ const prisma = require('../../config/prisma');
 
 // Service class containing business logic for turn-based fare negotiations
 class NegotiationsService {
+  // Helper to determine if a negotiation session has expired based on ride departure & creation time
+  isNegotiationExpired(negotiation, ride) {
+    if (!negotiation || negotiation.status !== 'OPEN') return false;
+
+    const now = Date.now();
+    const departureTime = new Date(ride.departureAt).getTime();
+    const createdAt = new Date(negotiation.createdAt).getTime();
+
+    // A ride is scheduled if isRecurring is true OR departureAt is more than 5 minutes after ride creation
+    const rideCreatedTime = new Date(ride.createdAt).getTime();
+    const isScheduled = ride.isRecurring || (departureTime - rideCreatedTime > 5 * 60 * 1000);
+
+    if (isScheduled) {
+      // Scheduled ride: Expiration occurs when scheduled departure time starts
+      return now >= departureTime;
+    } else {
+      // Immediate ride booking: Expiration occurs 10 minutes after negotiation creation
+      const tenMinutesMs = 10 * 60 * 1000;
+      return now - createdAt > tenMinutesMs;
+    }
+  }
+
+  async checkAndEnforceExpiry(negotiation, ride) {
+    if (this.isNegotiationExpired(negotiation, ride)) {
+      await prisma.negotiation.update({
+        where: { id: negotiation.id },
+        data: { status: 'EXPIRED' },
+      });
+
+      const departureTime = new Date(ride.departureAt).getTime();
+      const rideCreatedTime = new Date(ride.createdAt).getTime();
+      const isScheduled = ride.isRecurring || (departureTime - rideCreatedTime > 5 * 60 * 1000);
+
+      const msg = isScheduled
+        ? 'Negotiation time window has expired as the scheduled ride departure time has passed.'
+        : 'Negotiation time window has expired (10 minutes maximum limit for immediate ride bookings).';
+
+      const error = new Error(msg);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
   // Starts a new price negotiation session for a ride (Passenger only)
   async createNegotiation(currentUser, rideId, amount) {
     const ride = await prisma.ride.findUnique({
@@ -23,6 +66,13 @@ class NegotiationsService {
     if (ride.status !== 'SCHEDULED') {
       const error = new Error('Cannot negotiate fare on a ride that is no longer accepting bookings');
       error.statusCode = 409;
+      throw error;
+    }
+
+    // Check if ride departure time has already passed
+    if (Date.now() >= new Date(ride.departureAt).getTime()) {
+      const error = new Error('Cannot start negotiation. Ride departure time has already passed.');
+      error.statusCode = 400;
       throw error;
     }
 
@@ -48,9 +98,16 @@ class NegotiationsService {
     });
 
     if (existing) {
-      const error = new Error('An active negotiation already exists for this ride');
-      error.statusCode = 400;
-      throw error;
+      if (this.isNegotiationExpired(existing, ride)) {
+        await prisma.negotiation.update({
+          where: { id: existing.id },
+          data: { status: 'EXPIRED' },
+        });
+      } else {
+        const error = new Error('An active negotiation already exists for this ride');
+        error.statusCode = 400;
+        throw error;
+      }
     }
 
     return await prisma.negotiation.create({
@@ -90,16 +147,27 @@ class NegotiationsService {
       where.passengerId = currentUser.id;
     }
 
-    return await prisma.negotiation.findMany({
+    const negotiations = await prisma.negotiation.findMany({
       where,
       include: {
         passenger: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
-        offers: { orderBy: { createdAt: 'asc' } },
+        offers: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { updatedAt: 'desc' },
     });
+
+    const active = [];
+    for (const neg of negotiations) {
+      if (this.isNegotiationExpired(neg, ride)) {
+        await prisma.negotiation.update({ where: { id: neg.id }, data: { status: 'EXPIRED' } });
+      } else {
+        active.push(neg);
+      }
+    }
+
+    return active;
   }
 
   // Gets full offer history for a specific negotiation session
@@ -146,6 +214,8 @@ class NegotiationsService {
       error.statusCode = 404;
       throw error;
     }
+
+    await this.checkAndEnforceExpiry(negotiation, negotiation.ride);
 
     if (negotiation.ride.status !== 'SCHEDULED') {
       const error = new Error('Cannot counter-offer on a ride that is no longer accepting bookings');
@@ -204,6 +274,8 @@ class NegotiationsService {
       error.statusCode = 404;
       throw error;
     }
+
+    await this.checkAndEnforceExpiry(negotiation, negotiation.ride);
 
     if (negotiation.ride.status !== 'SCHEDULED') {
       const error = new Error('Cannot accept negotiation for a ride that is no longer accepting bookings');
