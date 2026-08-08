@@ -71,7 +71,7 @@ class NegotiationsService {
     });
   }
 
-  // Lists all open negotiations for a ride (Driver only)
+  // Lists negotiations for a ride (Driver sees all, Passenger sees their own)
   async getRideNegotiations(currentUser, rideId) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
 
@@ -81,19 +81,22 @@ class NegotiationsService {
       throw error;
     }
 
-    if (ride.driverId !== currentUser.id && currentUser.role !== 'SUPER_ADMIN') {
-      const error = new Error('Forbidden: Only the ride driver can list ride negotiations');
-      error.statusCode = 403;
-      throw error;
+    const isDriver = ride.driverId === currentUser.id || currentUser.role === 'SUPER_ADMIN';
+
+    const where = { rideId, status: 'OPEN' };
+
+    // If caller is NOT the driver, filter strictly by passenger's own ID
+    if (!isDriver) {
+      where.passengerId = currentUser.id;
     }
 
     return await prisma.negotiation.findMany({
-      where: { rideId, status: 'OPEN' },
+      where,
       include: {
         passenger: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
-        offers: { orderBy: { createdAt: 'desc' }, take: 1 },
+        offers: { orderBy: { createdAt: 'asc' } },
       },
       orderBy: { updatedAt: 'desc' },
     });
