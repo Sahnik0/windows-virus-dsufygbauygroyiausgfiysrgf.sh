@@ -538,7 +538,7 @@ class RidesService {
               bookings: {
                 include: {
                   passenger: { select: { id: true, firstName: true, lastName: true, phone: true } },
-                  joinRequest: { select: { agreedFare: true } },
+                  request: { select: { agreedFare: true } },
                 },
               },
             },
