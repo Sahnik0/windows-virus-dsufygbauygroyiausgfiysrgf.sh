@@ -65,9 +65,12 @@ class TripsService {
     const isDriver = trip.ride.driverId === currentUser.id;
     const callerRole = isDriver ? 'DRIVER' : 'PASSENGER';
 
+    const payments = trip.payments || [];
+
     const passengers = (trip.ride.bookings || []).map((b) => {
       // Find matching payment for passenger if present
-      const payment = (trip.payments || []).find((p) => p.payerId === b.passenger.id);
+      const pPayment = payments.find((p) => p.payerId === b.passenger.id) || (payments.length > 0 ? payments[0] : null);
+      const isPaid = pPayment ? pPayment.status === 'PAID' : (trip.status === 'COMPLETED' && payments.length > 0);
       return {
         id: b.passenger.id,
         firstName: b.passenger.firstName,
@@ -75,7 +78,8 @@ class TripsService {
         phone: b.passenger.phone,
         seatsBooked: b.seatsBooked,
         fareAmount: Number(b.request?.agreedFare || trip.ride.farePerSeat),
-        paymentStatus: payment ? payment.status : (trip.status === 'COMPLETED' ? 'PAID' : 'PENDING'),
+        paymentStatus: isPaid ? 'PAID' : 'PENDING',
+        paymentMethod: pPayment ? pPayment.method : (payments.length > 0 ? payments[0].method : null),
         otp: getPassengerOtp(trip.id, b.passenger.id),
       };
     });
@@ -83,11 +87,22 @@ class TripsService {
     // Determine user's specific fareAmount for history cards
     let fareAmount = Number(trip.ride.farePerSeat);
     let userOtp = null;
+    let myPaymentStatus = 'PENDING';
+    let myPaymentMethod = null;
+
     if (!isDriver) {
       userOtp = getPassengerOtp(trip.id, currentUser.id);
       const myBooking = trip.ride.bookings?.find((b) => b.passengerId === currentUser.id);
       if (myBooking?.request?.agreedFare) {
         fareAmount = Number(myBooking.request.agreedFare);
+      }
+      const myPayment = payments.find((p) => p.payerId === currentUser.id) || (payments.length > 0 ? payments[0] : null);
+      if (myPayment && myPayment.status === 'PAID') {
+        myPaymentStatus = 'PAID';
+        myPaymentMethod = myPayment.method;
+      } else if (payments.some(p => p.status === 'PAID')) {
+        myPaymentStatus = 'PAID';
+        myPaymentMethod = payments[0].method;
       }
     }
 
@@ -132,6 +147,8 @@ class TripsService {
       callerRole,
       fareAmount,
       otp: userOtp,
+      myPaymentStatus,
+      myPaymentMethod,
     };
   }
 
