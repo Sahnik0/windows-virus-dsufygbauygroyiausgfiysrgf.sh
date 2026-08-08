@@ -147,30 +147,131 @@ class OrgsService {
       throw error;
     }
 
-    await prisma.$transaction(async (tx) => {
-      const users = await tx.user.findMany({ where: { orgId: targetOrgId }, select: { id: true } });
-      const userIds = users.map((u) => u.id);
+    await prisma.$transaction(
+      async (tx) => {
+        // 1. Fetch user IDs belonging to this org
+        const users = await tx.user.findMany({ where: { orgId: targetOrgId }, select: { id: true } });
+        const userIds = users.map((u) => u.id);
 
-      if (userIds.length > 0) {
-        const wallets = await tx.wallet.findMany({ where: { userId: { in: userIds } }, select: { id: true } });
-        const walletIds = wallets.map((w) => w.id);
+        // 2. Fetch ride IDs belonging to this org or its drivers
+        const rides = await tx.ride.findMany({
+          where: {
+            OR: [
+              { orgId: targetOrgId },
+              ...(userIds.length > 0 ? [{ driverId: { in: userIds } }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        const rideIds = rides.map((r) => r.id);
 
-        if (walletIds.length > 0) {
-          await tx.walletTransaction.deleteMany({ where: { walletId: { in: walletIds } } });
-          await tx.wallet.deleteMany({ where: { id: { in: walletIds } } });
+        // 3. Fetch trip IDs belonging to these rides
+        const trips = await tx.trip.findMany({
+          where: {
+            OR: [
+              ...(rideIds.length > 0 ? [{ rideId: { in: rideIds } }] : []),
+              ...(userIds.length > 0 ? [{ driverId: { in: userIds } }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        const tripIds = trips.map((t) => t.id);
+
+        // 4. Fetch join request IDs belonging to these rides or passengers
+        const joinReqs = await tx.joinRequest.findMany({
+          where: {
+            OR: [
+              ...(rideIds.length > 0 ? [{ rideId: { in: rideIds } }] : []),
+              ...(userIds.length > 0 ? [{ passengerId: { in: userIds } }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        const joinReqIds = joinReqs.map((j) => j.id);
+
+        // 5. Fetch booking IDs
+        const bookings = await tx.booking.findMany({
+          where: {
+            OR: [
+              ...(rideIds.length > 0 ? [{ rideId: { in: rideIds } }] : []),
+              ...(userIds.length > 0 ? [{ passengerId: { in: userIds } }] : []),
+              ...(joinReqIds.length > 0 ? [{ requestId: { in: joinReqIds } }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        const bookingIds = bookings.map((b) => b.id);
+
+        // Delete child trip components
+        if (tripIds.length > 0) {
+          await tx.tripPassenger.deleteMany({ where: { tripId: { in: tripIds } } });
+          await tx.tripLocation.deleteMany({ where: { tripId: { in: tripIds } } });
+          await tx.message.deleteMany({ where: { tripId: { in: tripIds } } });
+          await tx.callLog.deleteMany({ where: { tripId: { in: tripIds } } });
+          await tx.fareBreakdown.deleteMany({ where: { tripId: { in: tripIds } } });
         }
 
-        await tx.savedPlace.deleteMany({ where: { userId: { in: userIds } } });
-        await tx.joinRequest.deleteMany({ where: { passengerId: { in: userIds } } });
-        await tx.booking.deleteMany({ where: { passengerId: { in: userIds } } });
-        await tx.negotiation.deleteMany({ where: { passengerId: { in: userIds } } });
-        await tx.ride.deleteMany({ where: { driverId: { in: userIds } } });
-        await tx.vehicle.deleteMany({ where: { ownerId: { in: userIds } } });
-        await tx.user.deleteMany({ where: { orgId: targetOrgId } });
-      }
+        // Delete payments and wallet transactions
+        if (bookingIds.length > 0 || tripIds.length > 0) {
+          const payments = await tx.payment.findMany({
+            where: {
+              OR: [
+                ...(bookingIds.length > 0 ? [{ bookingId: { in: bookingIds } }] : []),
+                ...(tripIds.length > 0 ? [{ tripId: { in: tripIds } }] : []),
+              ],
+            },
+            select: { id: true },
+          });
+          const paymentIds = payments.map((p) => p.id);
 
-      await tx.org.delete({ where: { id: targetOrgId } });
-    });
+          if (paymentIds.length > 0) {
+            await tx.walletTransaction.deleteMany({ where: { paymentId: { in: paymentIds } } });
+            await tx.payment.deleteMany({ where: { id: { in: paymentIds } } });
+          }
+        }
+
+        // Delete trips
+        if (tripIds.length > 0) {
+          await tx.trip.deleteMany({ where: { id: { in: tripIds } } });
+        }
+
+        // Delete bookings, negotiations, join requests
+        if (bookingIds.length > 0) {
+          await tx.booking.deleteMany({ where: { id: { in: bookingIds } } });
+        }
+        if (joinReqIds.length > 0) {
+          await tx.negotiation.deleteMany({ where: { requestId: { in: joinReqIds } } });
+          await tx.joinRequest.deleteMany({ where: { id: { in: joinReqIds } } });
+        }
+
+        // Delete rides & vehicles
+        if (rideIds.length > 0) {
+          await tx.negotiation.deleteMany({ where: { rideId: { in: rideIds } } });
+          await tx.ride.deleteMany({ where: { id: { in: rideIds } } });
+        }
+
+        if (userIds.length > 0) {
+          await tx.savedPlace.deleteMany({ where: { userId: { in: userIds } } });
+          await tx.vehicle.deleteMany({ where: { ownerId: { in: userIds } } });
+
+          const wallets = await tx.wallet.findMany({ where: { userId: { in: userIds } }, select: { id: true } });
+          const walletIds = wallets.map((w) => w.id);
+          if (walletIds.length > 0) {
+            await tx.walletTransaction.deleteMany({ where: { walletId: { in: walletIds } } });
+            await tx.wallet.deleteMany({ where: { id: { in: walletIds } } });
+          }
+
+          await tx.user.deleteMany({ where: { orgId: targetOrgId } });
+        }
+
+        // Finally delete the organization record
+        await tx.org.delete({ where: { id: targetOrgId } });
+      },
+      {
+        timeout: 30000, // 30 seconds timeout for remote cloud PostgreSQL
+        maxWait: 10000,
+      }
+    );
 
     return { message: 'Organization deleted successfully' };
   }

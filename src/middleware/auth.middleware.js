@@ -3,13 +3,18 @@ const prisma = require('../config/prisma');
 
 // Middleware to protect standard API routes using a JWT access token
 async function authenticateToken(req, res, next) {
-  // Step 1: Read Authorization header (expected format: 'Bearer <token>')
+  // Step 1: Read token from Authorization header or URL query parameter
+  let token = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Authentication token missing or malformed' });
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication token missing or malformed' });
+  }
 
   try {
     // Step 2: Verify token signature and expiration against JWT_ACCESS_SECRET
@@ -50,38 +55,31 @@ async function authenticateToken(req, res, next) {
 
 // Middleware specifically for uploading ID proof documents after registration
 async function authenticatePendingToken(req, res, next) {
+  let token = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
     return res.status(401).json({ message: 'Pending upload token missing or malformed' });
   }
 
-  const token = authHeader.split(' ')[1];
-
   try {
-    const secret = process.env.JWT_PENDING_SECRET || process.env.JWT_ACCESS_SECRET;
-    const decoded = jwt.verify(token, secret);
-
-    // Only allow tokens issued specifically for pending ID proof upload
-    if (decoded.type !== 'pending_upload') {
-      return res.status(401).json({ message: 'Only pending upload tokens can be used on this route' });
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+    if (decoded.type !== 'pending_registration') {
+      return res.status(401).json({ message: 'Invalid token type for registration upload' });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, role: true, orgId: true, verificationStatus: true },
-    });
-
-    if (!user) {
-      return res.status(401).json({ message: 'User account no longer exists' });
-    }
-
-    req.user = user;
+    req.user = { id: decoded.id };
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: 'Pending token has expired. Please re-register.' });
+      return res.status(401).json({ message: 'Registration token has expired. Please sign up again.' });
     }
-    return res.status(401).json({ message: 'Invalid pending upload token' });
+    return res.status(401).json({ message: 'Invalid registration token' });
   }
 }
 
