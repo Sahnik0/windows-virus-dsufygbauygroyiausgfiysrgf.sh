@@ -42,6 +42,47 @@ class TripsController {
         req.params.id,
         req.body.status
       );
+      // If OTP was generated (trip starting), broadcast via Socket.IO to trip room
+      if (result.otp) {
+        const io = req.app.get('io');
+        if (io) {
+          io.of('/tracking').to(`trip:${req.params.id}`).emit('otp:generated', {
+            tripId: req.params.id,
+            otp: result.otp,
+          });
+        }
+      }
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Passenger verifies OTP to confirm ride start
+  async verifyOtp(req, res, next) {
+    try {
+      const result = await tripsService.verifyOtpAndStart(
+        req.user,
+        req.params.id,
+        req.body.otp
+      );
+      // Broadcast ride started to all participants
+      const io = req.app.get('io');
+      if (io) {
+        io.of('/tracking').to(`trip:${req.params.id}`).emit('ride:started', {
+          tripId: req.params.id,
+        });
+      }
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Driver retrieves current OTP for display
+  async getOtp(req, res, next) {
+    try {
+      const result = await tripsService.getTripOtp(req.user, req.params.id);
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -50,3 +91,4 @@ class TripsController {
 }
 
 module.exports = new TripsController();
+

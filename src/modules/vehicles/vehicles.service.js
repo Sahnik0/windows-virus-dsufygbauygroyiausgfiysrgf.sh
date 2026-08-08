@@ -1,11 +1,13 @@
+const path = require('path');
+const fs = require('fs');
 const prisma = require('../../config/prisma');
 
 // Service class containing business logic for vehicle management
 class VehiclesService {
   // Registers a new vehicle with ownerId derived strictly from current user token
-  async createVehicle(currentUser, { model, registrationNumber, seatingCapacity, fuelType = 'PETROL' }) {
+  async createVehicle(currentUser, { model, registrationNumber, seatingCapacity, fuelType = 'PETROL' }, licensePath) {
     // Check if registration number is already registered by any user
-    const existing = await prisma.vehicle.findUnique({
+    const existing = await prisma.vehicle.findFirst({
       where: { registrationNumber },
     });
 
@@ -15,13 +17,20 @@ class VehiclesService {
       throw error;
     }
 
+    if (!licensePath) {
+      const error = new Error('Driving license document is required when registering a vehicle');
+      error.statusCode = 400;
+      throw error;
+    }
+
     return await prisma.vehicle.create({
       data: {
         model,
         registrationNumber,
-        seatingCapacity,
+        seatingCapacity: Number(seatingCapacity),
         fuelType,
-        status: 'VERIFIED',
+        status: 'PENDING',
+        licensePath,
         ownerId: currentUser.id,
       },
     });
@@ -35,16 +44,139 @@ class VehiclesService {
         where,
         include: {
           owner: {
-            select: { id: true, firstName: true, lastName: true, email: true, orgId: true },
+            select: { id: true, firstName: true, lastName: true, email: true, phone: true, orgId: true },
           },
         },
+        orderBy: { createdAt: 'desc' },
       });
     }
 
     // Default: Return vehicles owned by current user
     return await prisma.vehicle.findMany({
       where: { ownerId: currentUser.id },
+      orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // Returns list of vehicles waiting for admin verification approval (org level)
+  async getPendingVehicles(currentUser) {
+    const where = currentUser.role === 'ORG_ADMIN'
+      ? { status: 'PENDING', owner: { orgId: currentUser.orgId } }
+      : { status: 'PENDING' };
+
+    return await prisma.vehicle.findMany({
+      where,
+      include: {
+        owner: {
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, orgId: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // Streams/fetches driving license document path for a vehicle
+  async getVehicleLicense(currentUser, vehicleId) {
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { id: vehicleId },
+      include: { owner: true },
+    });
+
+    if (!vehicle || !vehicle.licensePath) {
+      const error = new Error('Driving license document not found for this vehicle');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Authorization: vehicle owner, org admin for same org, or super admin
+    const isOwner = vehicle.ownerId === currentUser.id;
+    const isOrgAdmin = currentUser.role === 'ORG_ADMIN' && vehicle.owner.orgId === currentUser.orgId;
+    const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
+
+    if (!isOwner && !isOrgAdmin && !isSuperAdmin) {
+      const error = new Error('Forbidden: You are not authorized to view this driving license document');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    let filePath = vehicle.licensePath;
+    if (!path.isAbsolute(filePath)) {
+      filePath = path.join(__dirname, '../../../', filePath);
+    }
+
+    if (!fs.existsSync(filePath)) {
+      const error = new Error('Driving license file missing from disk');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return { filePath };
+  }
+
+  // Approves a pending vehicle application (Org Admin / Super Admin)
+  async approveVehicle(currentUser, vehicleId) {
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { id: vehicleId },
+      include: { owner: true },
+    });
+
+    if (!vehicle) {
+      const error = new Error('Vehicle not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (currentUser.role === 'ORG_ADMIN' && vehicle.owner.orgId !== currentUser.orgId) {
+      const error = new Error('Forbidden: Vehicle belongs to another organization');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const updated = await prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        status: 'VERIFIED',
+        rejectionReason: null,
+      },
+    });
+
+    return {
+      message: 'Vehicle approved successfully',
+      vehicle: updated,
+    };
+  }
+
+  // Rejects a pending vehicle application with a reason (Org Admin / Super Admin)
+  async rejectVehicle(currentUser, vehicleId, rejectionReason) {
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { id: vehicleId },
+      include: { owner: true },
+    });
+
+    if (!vehicle) {
+      const error = new Error('Vehicle not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (currentUser.role === 'ORG_ADMIN' && vehicle.owner.orgId !== currentUser.orgId) {
+      const error = new Error('Forbidden: Vehicle belongs to another organization');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const updated = await prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        status: 'REJECTED',
+        rejectionReason: rejectionReason || 'Driving license verification failed',
+      },
+    });
+
+    return {
+      message: 'Vehicle verification rejected',
+      vehicle: updated,
+    };
   }
 
   // Fetches a single vehicle record by ID with ownership checks
@@ -94,7 +226,7 @@ class VehiclesService {
     }
 
     if (registrationNumber && registrationNumber !== vehicle.registrationNumber) {
-      const existing = await prisma.vehicle.findUnique({ where: { registrationNumber } });
+      const existing = await prisma.vehicle.findFirst({ where: { registrationNumber } });
       if (existing) {
         const error = new Error('Registration number is already in use by another vehicle');
         error.statusCode = 400;
@@ -107,7 +239,7 @@ class VehiclesService {
       data: {
         ...(model !== undefined && { model }),
         ...(registrationNumber !== undefined && { registrationNumber }),
-        ...(seatingCapacity !== undefined && { seatingCapacity }),
+        ...(seatingCapacity !== undefined && { seatingCapacity: Number(seatingCapacity) }),
         ...(fuelType !== undefined && { fuelType }),
         ...(status !== undefined && { status }),
       },

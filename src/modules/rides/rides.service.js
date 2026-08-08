@@ -28,6 +28,12 @@ class RidesService {
       throw error;
     }
 
+    if (vehicle.status !== 'VERIFIED') {
+      const error = new Error('Vehicle is not verified by organization admin. Please wait for vehicle approval before publishing rides.');
+      error.statusCode = 400;
+      throw error;
+    }
+
     // Step 2: Calculate road distance, duration, and GeoJSON route line via OSRM engine
     const routeInfo = await getRoute(
       { lat: pickupLat, lng: pickupLng },

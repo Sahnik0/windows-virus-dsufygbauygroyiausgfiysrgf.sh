@@ -16,7 +16,7 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
-// Registers real-time live vehicle tracking handlers for the /tracking Socket.io namespace
+// Registers real-time live vehicle tracking + negotiation handlers for /tracking namespace
 function registerTrackingHandlers(io) {
   const trackingNamespace = io.of('/tracking');
 
@@ -26,11 +26,12 @@ function registerTrackingHandlers(io) {
   trackingNamespace.on('connection', (socket) => {
     console.log(`[Tracking Socket] User connected: ${socket.user.id}`);
 
+    // ── TRIP TRACKING ──────────────────────────────────────────
+
     // Join trip room and send planned route geometry immediately on join
     socket.on('join:trip', async ({ tripId }) => {
       try {
         await assertTripParticipant(socket.user.id, tripId);
-
         const roomName = `trip:${tripId}`;
         socket.join(roomName);
 
@@ -58,7 +59,7 @@ function registerTrackingHandlers(io) {
         }
 
         // Only allow tracking for active trips
-        if (trip.status !== 'TRIP_STARTED' && trip.status !== 'TRIP_IN_PROGRESS') {
+        if (trip.status !== 'IN_PROGRESS' && trip.status !== 'SCHEDULED') {
           return socket.emit('error', {
             message: `Location tracking inactive for trip in status ${trip.status}`,
           });
@@ -66,11 +67,7 @@ function registerTrackingHandlers(io) {
 
         // 1. Save GPS coordinate to database
         const location = await prisma.tripLocation.create({
-          data: {
-            tripId,
-            lat,
-            lng,
-          },
+          data: { tripId, lat, lng },
         });
 
         // 2. ETA Throttling: Recalculate OSRM ETA at most once per 30 seconds per trip
@@ -79,25 +76,71 @@ function registerTrackingHandlers(io) {
         let etaMinutes = cachedEta ? cachedEta.etaMinutes : null;
 
         if (!cachedEta || now - cachedEta.lastCalculatedAt > 30000) {
-          const routeInfo = await getRoute(
-            { lat, lng },
-            { lat: trip.ride.destinationLat, lng: trip.ride.destinationLng }
-          );
-          etaMinutes = routeInfo.durationMinutes;
-          etaCache.set(tripId, { lastCalculatedAt: now, etaMinutes });
+          try {
+            const routeInfo = await getRoute(
+              { lat, lng },
+              { lat: trip.ride.destinationLat, lng: trip.ride.destinationLng }
+            );
+            etaMinutes = routeInfo.durationMinutes;
+            etaCache.set(tripId, { lastCalculatedAt: now, etaMinutes });
+          } catch { /* keep cached ETA on OSRM error */ }
         }
 
         // 3. Broadcast updated location and ETA to all clients in the trip room
         trackingNamespace.to(`trip:${tripId}`).emit('location:update', {
-          tripId,
-          lat,
-          lng,
-          etaMinutes,
+          tripId, lat, lng, etaMinutes,
           recordedAt: location.recordedAt,
         });
       } catch (err) {
         socket.emit('error', { message: err.message });
       }
+    });
+
+    // ── REAL-TIME NEGOTIATION ───────────────────────────────────
+
+    // Join a ride negotiation room (passenger or driver watches for offers)
+    socket.on('join:ride', ({ rideId }) => {
+      socket.join(`ride:${rideId}`);
+    });
+
+    // Passenger or driver sends a fare offer for a ride
+    socket.on('negotiation:offer', async ({ rideId, negotiationId, amount, offeredBy }) => {
+      try {
+        // Broadcast the new offer to everyone in the ride room
+        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:offer', {
+          rideId,
+          negotiationId,
+          amount,
+          offeredBy,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        socket.emit('error', { message: err.message });
+      }
+    });
+
+    // Either side accepts the negotiation
+    socket.on('negotiation:accept', async ({ rideId, negotiationId, agreedFare }) => {
+      try {
+        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:accepted', {
+          rideId,
+          negotiationId,
+          agreedFare,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        socket.emit('error', { message: err.message });
+      }
+    });
+
+    // Driver accepts a join request — notify passenger in ride room
+    socket.on('ride:accepted', ({ rideId, passengerId, tripId }) => {
+      trackingNamespace.to(`ride:${rideId}`).emit('ride:matched', {
+        rideId,
+        passengerId,
+        tripId,
+        message: 'Your ride has been confirmed! 🎉',
+      });
     });
 
     socket.on('disconnect', () => {
@@ -107,3 +150,4 @@ function registerTrackingHandlers(io) {
 }
 
 module.exports = registerTrackingHandlers;
+

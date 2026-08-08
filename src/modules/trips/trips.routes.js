@@ -7,25 +7,13 @@ const { updateTripStatusSchema } = require('./trips.validation');
 const router = express.Router();
 
 // 1. Get paginated trip history for driver or passenger
-router.get(
-  '/history',
-  authenticateToken,
-  tripsController.getTripHistory
-);
+router.get('/history', authenticateToken, tripsController.getTripHistory);
 
 // 2. Get active ongoing trips where user is driver or booked passenger
-router.get(
-  '/',
-  authenticateToken,
-  tripsController.getMyTrips
-);
+router.get('/', authenticateToken, tripsController.getMyTrips);
 
 // 3. Get single trip details by ID
-router.get(
-  '/:id',
-  authenticateToken,
-  tripsController.getTripById
-);
+router.get('/:id', authenticateToken, tripsController.getTripById);
 
 // 4. Advance trip lifecycle status (driver-only state machine transition)
 router.patch(
@@ -35,4 +23,11 @@ router.patch(
   tripsController.updateTripStatus
 );
 
+// 5. Driver: get current OTP for display (before passenger confirms)
+router.get('/:id/otp', authenticateToken, tripsController.getOtp);
+
+// 6. Passenger: verify OTP to start the ride
+router.post('/:id/otp/verify', authenticateToken, tripsController.verifyOtp);
+
 module.exports = router;
+

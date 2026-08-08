@@ -4,7 +4,7 @@ const { z } = require('zod');
 const createVehicleSchema = z.object({
   model: z.string().min(1, 'Vehicle model is required'),
   registrationNumber: z.string().min(1, 'Registration number is required'),
-  seatingCapacity: z.number().int().min(1, 'Seating capacity must be at least 1'),
+  seatingCapacity: z.coerce.number().int().min(1, 'Seating capacity must be at least 1'),
   fuelType: z.enum(['PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID']).optional().default('PETROL'),
 });
 
@@ -12,12 +12,18 @@ const createVehicleSchema = z.object({
 const updateVehicleSchema = z.object({
   model: z.string().min(1).optional(),
   registrationNumber: z.string().min(1).optional(),
-  seatingCapacity: z.number().int().min(1).optional(),
+  seatingCapacity: z.coerce.number().int().min(1).optional(),
   fuelType: z.enum(['PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID']).optional(),
   status: z.enum(['VERIFIED', 'PENDING', 'REJECTED']).optional(),
+});
+
+// Input validation schema for rejecting a vehicle verification application
+const rejectVehicleSchema = z.object({
+  rejectionReason: z.string().min(1, 'Rejection reason is required'),
 });
 
 module.exports = {
   createVehicleSchema,
   updateVehicleSchema,
+  rejectVehicleSchema,
 };

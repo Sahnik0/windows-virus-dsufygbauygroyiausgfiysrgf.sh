@@ -247,7 +247,101 @@ async function runE2ETests() {
     console.assert(orgAdminLoginRes.status === 200, 'Dynamic Org Admin login succeeds with 200 OK');
     console.assert(orgAdminLoginData.user.role === 'ORG_ADMIN', 'Role is ORG_ADMIN');
     console.assert(orgAdminLoginData.user.orgId === dynamicOrgId, 'Tenant Org ID matches created org');
-    console.log('✅ Step C: Dynamic Org Admin login & token generation passed');
+    // 6. Vehicle Driving License Verification & Ride Guard Test
+    console.log('\n--- 6. Vehicle Driving License Verification & Ride Guard Test ---');
+    const FormData = require('form-data');
+    const fs = require('fs');
+    const path = require('path');
+
+    // Create temporary dummy license file for test upload
+    const dummyLicensePath = path.join(__dirname, 'scratch/sample_dl.png');
+    if (!fs.existsSync(path.dirname(dummyLicensePath))) {
+      fs.mkdirSync(path.dirname(dummyLicensePath), { recursive: true });
+    }
+    fs.writeFileSync(dummyLicensePath, 'dummy_driving_license_content');
+    const fileBuffer = fs.readFileSync(dummyLicensePath);
+    const form = new FormData();
+    form.append('model', 'Honda Civic');
+    form.append('registrationNumber', `TEST-${Date.now()}`);
+    form.append('seatingCapacity', '4');
+    form.append('fuelType', 'PETROL');
+    form.append('license', fileBuffer, { filename: 'sample_dl.png', contentType: 'image/png' });
+
+    const vehRegRes = await fetch(`${baseUrl}/vehicles`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        ...form.getHeaders(),
+      },
+      body: form.getBuffer(),
+    });
+    const vehRegData = await vehRegRes.json();
+    console.assert(vehRegRes.status === 201, 'Vehicle registration with license returns 201');
+    console.assert(vehRegData.status === 'PENDING', 'New vehicle defaults to PENDING status');
+    console.log('✅ Vehicle registration with driving license document passed');
+
+    // Attempting to publish ride with PENDING vehicle must fail (400 Bad Request)
+    const rideAttemptRes = await fetch(`${baseUrl}/rides`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({
+        vehicleId: vehRegData.id,
+        pickupLabel: 'Tech Park',
+        pickupLat: 12.9716,
+        pickupLng: 77.5946,
+        destinationLabel: 'City Center',
+        destinationLat: 12.9352,
+        destinationLng: 77.6245,
+        departureAt: new Date(Date.now() + 3600000).toISOString(),
+        availableSeats: 3,
+        farePerSeat: 150,
+      }),
+    });
+    console.assert(rideAttemptRes.status === 400, 'Unverified vehicle ride creation blocked with 400');
+    console.log('✅ Unverified vehicle ride creation guard passed');
+
+    // Admin views pending vehicles
+    const pendingVehsRes = await fetch(`${baseUrl}/vehicles/pending`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const pendingVehsData = await pendingVehsRes.json();
+    console.assert(pendingVehsRes.status === 200, 'Admin can fetch pending vehicles');
+    console.assert(pendingVehsData.some((v) => v.id === vehRegData.id), 'Pending vehicle present in admin queue');
+    console.log('✅ Admin pending vehicles queue passed');
+
+    // Admin approves vehicle
+    const approveVehRes = await fetch(`${baseUrl}/vehicles/${vehRegData.id}/approve`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    console.assert(approveVehRes.status === 200, 'Vehicle approval returns 200 OK');
+    console.log('✅ Vehicle approval passed');
+
+    // User can now publish ride with verified vehicle
+    const validRideRes = await fetch(`${baseUrl}/rides`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({
+        vehicleId: vehRegData.id,
+        pickupLabel: 'Tech Park',
+        pickupLat: 12.9716,
+        pickupLng: 77.5946,
+        destinationLabel: 'City Center',
+        destinationLat: 12.9352,
+        destinationLng: 77.6245,
+        departureAt: new Date(Date.now() + 3600000).toISOString(),
+        availableSeats: 3,
+        farePerSeat: 150,
+      }),
+    });
+    console.assert(validRideRes.status === 201, 'Verified vehicle ride creation succeeds with 201');
+    console.log('✅ Verified vehicle ride creation passed');
 
     console.log('\n🎉 ALL E2E VERIFICATION TESTS PASSED SUCCESSFULLY!\n');
   } catch (err) {
