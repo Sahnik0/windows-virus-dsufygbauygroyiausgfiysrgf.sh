@@ -5,6 +5,7 @@ const { requireRole } = require('../../middleware/role.middleware');
 const validate = require('../../middleware/validate.middleware');
 const {
   createOrgSchema,
+  updateOrgSchema,
   provisionOrgAdminSchema,
   updateOrgSettingsSchema,
 } = require('./orgs.validation');
@@ -28,7 +29,32 @@ router.get(
   orgsController.getAllOrgs
 );
 
-// 3. Provision an Org Admin account for an organization (SUPER_ADMIN only)
+// 3. Get single organization details (SUPER_ADMIN or ORG_ADMIN)
+router.get(
+  '/:orgId',
+  authenticateToken,
+  requireRole('SUPER_ADMIN', 'ORG_ADMIN'),
+  orgsController.getOrgById
+);
+
+// 4. Update organization details (name, status, etc.) (SUPER_ADMIN or ORG_ADMIN)
+router.patch(
+  '/:orgId',
+  authenticateToken,
+  requireRole('SUPER_ADMIN', 'ORG_ADMIN'),
+  validate(updateOrgSchema),
+  orgsController.updateOrg
+);
+
+// 5. Delete organization (SUPER_ADMIN only)
+router.delete(
+  '/:orgId',
+  authenticateToken,
+  requireRole('SUPER_ADMIN'),
+  orgsController.deleteOrg
+);
+
+// 6. Provision an Org Admin account for an organization (SUPER_ADMIN only)
 router.post(
   '/:orgId/admins',
   authenticateToken,
@@ -37,7 +63,7 @@ router.post(
   orgsController.provisionOrgAdmin
 );
 
-// 4. List all admins assigned to an organization (SUPER_ADMIN only)
+// 7. List all admins assigned to an organization (SUPER_ADMIN only)
 router.get(
   '/:orgId/admins',
   authenticateToken,
@@ -45,7 +71,7 @@ router.get(
   orgsController.getOrgAdmins
 );
 
-// 5. Update organization pricing settings (ORG_ADMIN for own org, or SUPER_ADMIN)
+// 8. Update organization pricing settings (ORG_ADMIN for own org, or SUPER_ADMIN)
 router.patch(
   '/:orgId/settings',
   authenticateToken,

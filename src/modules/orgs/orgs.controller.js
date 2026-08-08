@@ -29,6 +29,43 @@ class OrgsController {
     }
   }
 
+  // Handles getting a single organization by ID
+  async getOrgById(req, res, next) {
+    try {
+      const result = await orgsService.getOrgById(req.params.orgId);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Handles updating organization details (name, status, etc.)
+  async updateOrg(req, res, next) {
+    try {
+      const result = await orgsService.updateOrg(req.user, req.params.orgId, req.body);
+      res.status(200).json({
+        message: 'Organization updated successfully',
+        org: result,
+        id: result.id,
+        name: result.name,
+        slug: result.slug,
+        status: result.status,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Handles deleting an organization
+  async deleteOrg(req, res, next) {
+    try {
+      const result = await orgsService.deleteOrg(req.user, req.params.orgId);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Handles provisioning an Org Admin for an organization
   async provisionOrgAdmin(req, res, next) {
     try {
