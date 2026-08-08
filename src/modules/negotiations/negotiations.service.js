@@ -153,7 +153,7 @@ class NegotiationsService {
         passenger: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
-        offers: { orderBy: { createdAt: 'desc' } },
+        offers: { orderBy: { createdAt: 'asc' } },
       },
       orderBy: { updatedAt: 'desc' },
     });
