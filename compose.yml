@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: carpooling_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-carpool_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-carpool_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-carpool_db}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

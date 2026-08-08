@@ -1,0 +1,304 @@
+// Prisma schema for Enterprise Carpooling Platform Backend
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORG_ADMIN
+  USER
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RideStatus {
+  PUBLISHED
+  FULL
+  COMPLETED
+}
+
+enum InitiatedBy {
+  PASSENGER
+  DRIVER
+}
+
+enum JoinRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum BookingStatus {
+  BOOKED
+  COMPLETED
+}
+
+enum TripStatus {
+  RIDE_BOOKED
+  TRIP_STARTED
+  TRIP_IN_PROGRESS
+  TRIP_COMPLETED
+  PAYMENT_PENDING
+  PAYMENT_COMPLETED
+}
+
+enum NegotiationStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum OfferedBy {
+  PASSENGER
+  DRIVER
+}
+
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  WALLET
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Org {
+  id                String   @id @default(uuid())
+  name              String
+  fuelCostPerLitre  Decimal  @default(100.00) @db.Decimal(10, 2)
+  costPerKmDefault  Decimal  @default(15.00) @db.Decimal(10, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  users User[]
+  rides Ride[]
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  phone              String?
+  role               Role               @default(USER)
+  // orgId is nullable specifically and only for SUPER_ADMIN. Enforced at application layer for ORG_ADMIN/USER.
+  orgId              String?
+  org                Org?               @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  verificationStatus VerificationStatus @default(PENDING)
+  idProofPath        String?
+  idProofUploadedAt  DateTime?
+  rejectionReason    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  vehicles     Vehicle[]
+  savedPlaces  SavedPlace[]
+  driverRides  Ride[]        @relation("DriverRides")
+  joinRequests JoinRequest[] @relation("PassengerJoinRequests")
+  bookings     Booking[]     @relation("PassengerBookings")
+  negotiations Negotiation[] @relation("PassengerNegotiations")
+  messages     Message[]
+  wallet       Wallet?
+  payments     Payment[]
+}
+
+model Vehicle {
+  id                 String   @id @default(uuid())
+  model              String
+  registrationNumber String   @unique
+  seatingCapacity    Int
+  ownerId            String
+  owner              User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  rides Ride[]
+}
+
+model SavedPlace {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  address   String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now())
+}
+
+model Ride {
+  id                   String     @id @default(uuid())
+  driverId             String
+  driver               User       @relation("DriverRides", fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId            String
+  vehicle              Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  pickupLabel          String
+  pickupLat            Float
+  pickupLng            Float
+  destinationLabel     String
+  destinationLat       Float
+  destinationLng       Float
+  departureAt          DateTime
+  availableSeats       Int
+  farePerSeat          Decimal    @db.Decimal(10, 2)
+  isRecurring          Boolean    @default(false)
+  status               RideStatus @default(PUBLISHED)
+  routeGeometry        String?    @db.Text
+  routeDistanceKm      Float?
+  routeDurationMinutes Float?
+  orgId                String
+  org                  Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  joinRequests JoinRequest[]
+  bookings     Booking[]
+  trip         Trip?
+  negotiations Negotiation[]
+}
+
+model Negotiation {
+  id          String            @id @default(uuid())
+  rideId      String
+  ride        Ride              @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  passengerId String
+  passenger   User              @relation("PassengerNegotiations", fields: [passengerId], references: [id], onDelete: Cascade)
+  status      NegotiationStatus @default(OPEN)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  offers       NegotiationOffer[]
+  joinRequests JoinRequest[]
+}
+
+model NegotiationOffer {
+  id            String      @id @default(uuid())
+  negotiationId String
+  negotiation   Negotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+  offeredBy     OfferedBy
+  amount        Decimal     @db.Decimal(10, 2)
+  createdAt     DateTime    @default(now())
+}
+
+model JoinRequest {
+  id            String            @id @default(uuid())
+  rideId        String
+  ride          Ride              @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  passengerId   String
+  passenger     User              @relation("PassengerJoinRequests", fields: [passengerId], references: [id], onDelete: Cascade)
+  initiatedBy   InitiatedBy
+  agreedFare    Decimal           @db.Decimal(10, 2)
+  negotiationId String?
+  negotiation   Negotiation?      @relation(fields: [negotiationId], references: [id], onDelete: SetNull)
+  seatsRequested Int              @default(1)
+  status        JoinRequestStatus @default(PENDING)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  booking Booking?
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  rideId        String
+  ride          Ride          @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  passengerId   String
+  passenger     User          @relation("PassengerBookings", fields: [passengerId], references: [id], onDelete: Cascade)
+  joinRequestId String        @unique
+  joinRequest   JoinRequest   @relation(fields: [joinRequestId], references: [id], onDelete: Cascade)
+  seatsBooked   Int
+  status        BookingStatus @default(BOOKED)
+  createdAt     DateTime      @default(now())
+}
+
+model Trip {
+  id          String     @id @default(uuid())
+  rideId      String     @unique
+  ride        Ride       @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  status      TripStatus @default(RIDE_BOOKED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  locations TripLocation[]
+  messages  Message[]
+  payments  Payment[]
+}
+
+model TripLocation {
+  id         String   @id @default(uuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  lat        Float
+  lng        Float
+  recordedAt DateTime @default(now())
+}
+
+model Message {
+  id        String    @id @default(uuid())
+  tripId    String
+  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content   String    @db.Text
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Decimal  @default(0.00) @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id        String                @id @default(uuid())
+  walletId  String
+  wallet    Wallet                @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type      WalletTransactionType
+  amount    Decimal               @db.Decimal(10, 2)
+  reason    String
+  createdAt DateTime              @default(now())
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  tripId           String
+  trip             Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  payerId          String
+  payer            User          @relation(fields: [payerId], references: [id], onDelete: Cascade)
+  amount           Decimal       @db.Decimal(10, 2)
+  method           PaymentMethod
+  status           PaymentStatus @default(PENDING)
+  razorpayOrderId  String?
+  razorpayPaymentId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
