@@ -6,6 +6,12 @@ class RidesController {
   async createRide(req, res, next) {
     try {
       const result = await ridesService.createRide(req.user, req.body);
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        if (req.user.orgId) tracking.to(`org:${req.user.orgId}`).emit('ride:created', result);
+        tracking.to(`user:${req.user.id}`).emit('ride:created', result);
+      }
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -73,6 +79,16 @@ class RidesController {
   async createJoinRequest(req, res, next) {
     try {
       const result = await ridesService.createJoinRequest(req.user, req.params.id, req.body);
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        tracking.to(`ride:${rideId}`).emit('join_request:created', result.joinRequest);
+        if (result.joinRequest?.ride?.driverId) {
+          tracking.to(`user:${result.joinRequest.ride.driverId}`).emit('join_request:created', result.joinRequest);
+        }
+        tracking.to(`user:${req.user.id}`).emit('join_request:created', result.joinRequest);
+      }
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -97,6 +113,19 @@ class RidesController {
         req.params.id,
         req.params.requestId
       );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        const passengerId = result.joinRequest?.passengerId;
+        const driverId = result.trip?.driverId;
+        const tripId = result.trip?.id;
+
+        tracking.to(`ride:${rideId}`).emit('ride:accepted', result);
+        if (tripId) tracking.to(`trip:${tripId}`).emit('ride:accepted', result);
+        if (passengerId) tracking.to(`user:${passengerId}`).emit('ride:accepted', result);
+        if (driverId) tracking.to(`user:${driverId}`).emit('ride:accepted', result);
+      }
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -111,6 +140,16 @@ class RidesController {
         req.params.id,
         req.params.requestId
       );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        tracking.to(`ride:${rideId}`).emit('join_request:declined', { rideId, requestId: req.params.requestId });
+        if (result.passengerId) {
+          tracking.to(`user:${result.passengerId}`).emit('join_request:declined', { rideId, requestId: req.params.requestId });
+        }
+        tracking.to(`user:${req.user.id}`).emit('join_request:declined', { rideId, requestId: req.params.requestId });
+      }
       res.status(200).json(result);
     } catch (error) {
       next(error);

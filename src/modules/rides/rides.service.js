@@ -632,6 +632,8 @@ class RidesService {
 
     return {
       message: 'Join request declined',
+      passengerId: request.passengerId,
+      rideId: request.rideId,
     };
   }
 }

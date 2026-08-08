@@ -42,12 +42,17 @@ class TripsController {
         req.params.id,
         req.body.status
       );
-      // If OTP was generated (trip starting), broadcast via Socket.IO to trip room
-      if (result.otp) {
-        const io = req.app.get('io');
-        if (io) {
-          io.of('/tracking').to(`trip:${req.params.id}`).emit('otp:generated', {
-            tripId: req.params.id,
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const tripId = req.params.id;
+        tracking.to(`trip:${tripId}`).emit('trip:updated', { tripId, status: result.trip.status });
+        tracking.to(`trip:${tripId}`).emit('trip:status', { tripId, status: result.trip.status });
+        tracking.to(`user:${req.user.id}`).emit('trip:updated', { tripId, status: result.trip.status });
+
+        if (result.otp) {
+          tracking.to(`trip:${tripId}`).emit('otp:generated', {
+            tripId,
             otp: result.otp,
           });
         }
@@ -70,9 +75,12 @@ class TripsController {
       // Broadcast ride started to all participants
       const io = req.app.get('io');
       if (io) {
-        io.of('/tracking').to(`trip:${req.params.id}`).emit('ride:started', {
-          tripId: req.params.id,
-        });
+        const tracking = io.of('/tracking');
+        const tripId = req.params.id;
+        tracking.to(`trip:${tripId}`).emit('ride:started', { tripId });
+        tracking.to(`trip:${tripId}`).emit('trip:pickup_verified', { tripId });
+        tracking.to(`trip:${tripId}`).emit('trip:updated', { tripId, status: 'IN_PROGRESS' });
+        tracking.to(`user:${req.user.id}`).emit('trip:updated', { tripId, status: 'IN_PROGRESS' });
       }
       res.status(200).json(result);
     } catch (error) {

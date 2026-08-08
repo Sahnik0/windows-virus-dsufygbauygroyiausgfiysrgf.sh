@@ -10,6 +10,22 @@ class NegotiationsController {
         req.params.id,
         req.body.amount
       );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        const lastOffer = result.offers?.[result.offers.length - 1];
+        const payload = {
+          rideId,
+          negotiationId: result.id,
+          amount: lastOffer ? lastOffer.amount : req.body.amount,
+          offeredBy: 'PASSENGER',
+          passengerId: result.passengerId,
+        };
+        tracking.to(`ride:${rideId}`).emit('negotiation:offer', payload);
+        tracking.to(`user:${result.passengerId}`).emit('negotiation:offer', payload);
+        if (result.ride?.driverId) tracking.to(`user:${result.ride.driverId}`).emit('negotiation:offer', payload);
+      }
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -52,6 +68,22 @@ class NegotiationsController {
         req.params.negotiationId,
         req.body.amount
       );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        const lastOffer = result.offers?.[result.offers.length - 1];
+        const payload = {
+          rideId,
+          negotiationId: result.id,
+          amount: lastOffer ? lastOffer.amount : req.body.amount,
+          offeredBy: lastOffer ? lastOffer.offeredBy : (req.user.id === result.ride?.driverId ? 'DRIVER' : 'PASSENGER'),
+          passengerId: result.passengerId,
+        };
+        tracking.to(`ride:${rideId}`).emit('negotiation:offer', payload);
+        tracking.to(`user:${result.passengerId}`).emit('negotiation:offer', payload);
+        if (result.ride?.driverId) tracking.to(`user:${result.ride.driverId}`).emit('negotiation:offer', payload);
+      }
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -66,6 +98,20 @@ class NegotiationsController {
         req.params.id,
         req.params.negotiationId
       );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        const payload = {
+          rideId,
+          negotiationId: req.params.negotiationId,
+          agreedFare: result.agreedFare,
+          passengerId: result.negotiation?.passengerId,
+        };
+        tracking.to(`ride:${rideId}`).emit('negotiation:accepted', payload);
+        if (result.negotiation?.passengerId) tracking.to(`user:${result.negotiation.passengerId}`).emit('negotiation:accepted', payload);
+        tracking.to(`user:${req.user.id}`).emit('negotiation:accepted', payload);
+      }
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -80,6 +126,19 @@ class NegotiationsController {
         req.params.id,
         req.params.negotiationId
       );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const rideId = req.params.id;
+        const payload = {
+          rideId,
+          negotiationId: req.params.negotiationId,
+          passengerId: result.negotiation?.passengerId,
+        };
+        tracking.to(`ride:${rideId}`).emit('negotiation:rejected', payload);
+        if (result.negotiation?.passengerId) tracking.to(`user:${result.negotiation.passengerId}`).emit('negotiation:rejected', payload);
+        tracking.to(`user:${req.user.id}`).emit('negotiation:rejected', payload);
+      }
       res.status(200).json(result);
     } catch (error) {
       next(error);
