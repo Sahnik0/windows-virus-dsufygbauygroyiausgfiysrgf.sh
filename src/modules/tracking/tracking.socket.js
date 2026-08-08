@@ -26,6 +26,12 @@ function registerTrackingHandlers(io) {
   trackingNamespace.on('connection', (socket) => {
     console.log(`[Tracking Socket] User connected: ${socket.user.id}`);
 
+    // Automatically join user-specific and organization-wide room
+    socket.join(`user:${socket.user.id}`);
+    if (socket.user.orgId) {
+      socket.join(`org:${socket.user.orgId}`);
+    }
+
     // ── TRIP TRACKING ──────────────────────────────────────────
 
     // Join trip room and send planned route geometry immediately on join
@@ -106,14 +112,18 @@ function registerTrackingHandlers(io) {
     // Passenger or driver sends a fare offer for a ride
     socket.on('negotiation:offer', async ({ rideId, negotiationId, amount, offeredBy }) => {
       try {
-        // Broadcast the new offer to everyone in the ride room
-        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:offer', {
+        const payload = {
           rideId,
           negotiationId,
           amount,
           offeredBy,
           timestamp: new Date().toISOString(),
-        });
+        };
+        // Broadcast the new offer to everyone in the ride room and org room
+        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:offer', payload);
+        if (socket.user.orgId) {
+          trackingNamespace.to(`org:${socket.user.orgId}`).emit('negotiation:offer', payload);
+        }
       } catch (err) {
         socket.emit('error', { message: err.message });
       }
@@ -122,12 +132,33 @@ function registerTrackingHandlers(io) {
     // Either side accepts the negotiation
     socket.on('negotiation:accept', async ({ rideId, negotiationId, agreedFare }) => {
       try {
-        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:accepted', {
+        const payload = {
           rideId,
           negotiationId,
           agreedFare,
           timestamp: new Date().toISOString(),
-        });
+        };
+        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:accepted', payload);
+        if (socket.user.orgId) {
+          trackingNamespace.to(`org:${socket.user.orgId}`).emit('negotiation:accepted', payload);
+        }
+      } catch (err) {
+        socket.emit('error', { message: err.message });
+      }
+    });
+
+    // Either side rejects the negotiation
+    socket.on('negotiation:reject', async ({ rideId, negotiationId }) => {
+      try {
+        const payload = {
+          rideId,
+          negotiationId,
+          timestamp: new Date().toISOString(),
+        };
+        trackingNamespace.to(`ride:${rideId}`).emit('negotiation:rejected', payload);
+        if (socket.user.orgId) {
+          trackingNamespace.to(`org:${socket.user.orgId}`).emit('negotiation:rejected', payload);
+        }
       } catch (err) {
         socket.emit('error', { message: err.message });
       }
@@ -135,12 +166,16 @@ function registerTrackingHandlers(io) {
 
     // Driver accepts a join request — notify passenger in ride room
     socket.on('ride:accepted', ({ rideId, passengerId, tripId }) => {
-      trackingNamespace.to(`ride:${rideId}`).emit('ride:matched', {
+      const payload = {
         rideId,
         passengerId,
         tripId,
         message: 'Your ride has been confirmed! 🎉',
-      });
+      };
+      trackingNamespace.to(`ride:${rideId}`).emit('ride:matched', payload);
+      if (socket.user.orgId) {
+        trackingNamespace.to(`org:${socket.user.orgId}`).emit('ride:matched', payload);
+      }
     });
 
     socket.on('disconnect', () => {
