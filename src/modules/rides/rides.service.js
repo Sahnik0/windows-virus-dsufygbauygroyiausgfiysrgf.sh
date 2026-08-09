@@ -627,25 +627,31 @@ class RidesService {
         });
       }
 
-      const formattedPassengers = trip.ride.bookings.map((b) => ({
-        id: b.passenger.id,
-        firstName: b.passenger.firstName,
-        lastName: b.passenger.lastName,
-        phone: b.passenger.phone,
-        seatsBooked: b.seatsBooked,
-        fareAmount: Number(b.request?.agreedFare || currentRide.farePerSeat),
-      }));
-
-      return {
-        message: 'Join request accepted',
-        booking: { id: booking.id, seatsBooked: booking.seatsBooked, status: booking.status },
-        trip: {
+      const tripsService = require('../trips/trips.service');
+      let fullTrip;
+      try {
+        fullTrip = await tripsService.getTripById(currentUser, trip.id);
+      } catch {
+        fullTrip = {
           id: trip.id,
           status: trip.status,
           rideId: trip.rideId,
           driverId: currentRide.driverId,
-          passengers: formattedPassengers,
-        },
+          passengers: trip.ride.bookings.map((b) => ({
+            id: b.passenger.id,
+            firstName: b.passenger.firstName,
+            lastName: b.passenger.lastName,
+            phone: b.passenger.phone,
+            seatsBooked: b.seatsBooked,
+            fareAmount: Number(b.request?.agreedFare || currentRide.farePerSeat),
+          })),
+        };
+      }
+
+      return {
+        message: 'Join request accepted',
+        booking: { id: booking.id, seatsBooked: booking.seatsBooked, status: booking.status },
+        trip: fullTrip,
         joinRequest: updatedRequest,
       };
     },
