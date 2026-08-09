@@ -110,4 +110,3 @@ module.exports = {
   authenticatePendingToken,
   getCachedUser,
 };
-};
