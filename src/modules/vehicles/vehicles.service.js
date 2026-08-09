@@ -37,9 +37,15 @@ class VehiclesService {
   }
 
   // Lists vehicles (users see their own vehicles; admins can pass includeOrg=true to see org vehicles)
-  async getVehicles(currentUser, includeOrg = false) {
+  async getVehicles(currentUser, includeOrg = false, filterOrgId = null) {
     if (includeOrg && (currentUser.role === 'ORG_ADMIN' || currentUser.role === 'SUPER_ADMIN')) {
-      const where = currentUser.role === 'ORG_ADMIN' ? { owner: { orgId: currentUser.orgId } } : {};
+      let where = {};
+      if (currentUser.role === 'ORG_ADMIN') {
+        where = { owner: { orgId: currentUser.orgId } };
+      } else if (currentUser.role === 'SUPER_ADMIN' && filterOrgId) {
+        where = { owner: { orgId: filterOrgId } };
+      }
+
       return await prisma.vehicle.findMany({
         where,
         include: {
@@ -59,10 +65,14 @@ class VehiclesService {
   }
 
   // Returns list of vehicles waiting for admin verification approval (org level)
-  async getPendingVehicles(currentUser) {
-    const where = currentUser.role === 'ORG_ADMIN'
-      ? { status: 'PENDING', owner: { orgId: currentUser.orgId } }
-      : { status: 'PENDING' };
+  async getPendingVehicles(currentUser, filterOrgId = null) {
+    let where = { status: 'PENDING' };
+
+    if (currentUser.role === 'ORG_ADMIN') {
+      where.owner = { orgId: currentUser.orgId };
+    } else if (currentUser.role === 'SUPER_ADMIN' && filterOrgId) {
+      where.owner = { orgId: filterOrgId };
+    }
 
     return await prisma.vehicle.findMany({
       where,

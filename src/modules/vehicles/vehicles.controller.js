@@ -17,7 +17,8 @@ class VehiclesController {
   async getVehicles(req, res, next) {
     try {
       const includeOrg = req.query.all === 'true';
-      const result = await vehiclesService.getVehicles(req.user, includeOrg);
+      const filterOrgId = req.query.orgId;
+      const result = await vehiclesService.getVehicles(req.user, includeOrg, filterOrgId);
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -27,7 +28,8 @@ class VehiclesController {
   // Lists pending vehicle verification applications (org admin / super admin)
   async getPendingVehicles(req, res, next) {
     try {
-      const result = await vehiclesService.getPendingVehicles(req.user);
+      const filterOrgId = req.query.orgId;
+      const result = await vehiclesService.getPendingVehicles(req.user, filterOrgId);
       res.status(200).json(result);
     } catch (error) {
       next(error);
