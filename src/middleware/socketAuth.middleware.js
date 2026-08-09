@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const prisma = require('../config/prisma');
+const { getCachedUser } = require('./auth.middleware');
 
 // Socket.io middleware to verify JWT access tokens on WebSocket connection handshakes
 async function socketAuthMiddleware(socket, next) {
@@ -19,11 +19,8 @@ async function socketAuthMiddleware(socket, next) {
       return next(new Error('Invalid token type'));
     }
 
-    // Verify user exists and is APPROVED
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, role: true, orgId: true, verificationStatus: true },
-    });
+    // Verify user exists and is APPROVED (cached)
+    const user = await getCachedUser(decoded.id);
 
     if (!user || user.verificationStatus !== 'APPROVED') {
       return next(new Error('Account not active or approved'));

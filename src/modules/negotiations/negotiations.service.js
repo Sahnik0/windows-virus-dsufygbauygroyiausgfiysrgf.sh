@@ -314,14 +314,87 @@ class NegotiationsService {
       where: { id: negotiationId },
       data: { status: 'ACCEPTED' },
       include: {
+        ride: true,
         offers: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
     });
 
+    const agreedFare = Number(updated.offers[0].amount);
+
+    // Automatically create / fetch JoinRequest & Trip so the booking is finalized immediately
+    let joinRequest = await prisma.joinRequest.findFirst({
+      where: {
+        rideId,
+        passengerId: negotiation.passengerId,
+        status: { in: ['PENDING', 'ACCEPTED'] },
+      },
+    });
+
+    if (!joinRequest) {
+      joinRequest = await prisma.joinRequest.create({
+        data: {
+          rideId,
+          passengerId: negotiation.passengerId,
+          initiatedBy: 'PASSENGER',
+          agreedFare,
+          seatsRequested: 1,
+          status: 'PENDING',
+        },
+      });
+    } else if (joinRequest.status === 'PENDING') {
+      await prisma.joinRequest.update({
+        where: { id: joinRequest.id },
+        data: { agreedFare },
+      });
+    }
+
+    await prisma.negotiation.update({
+      where: { id: negotiationId },
+      data: { requestId: joinRequest.id },
+    });
+
+    let trip = null;
+    let booking = null;
+
+    if (joinRequest.status === 'PENDING') {
+      const ridesService = require('../rides/rides.service');
+      const driverObj = {
+        id: negotiation.ride.driverId,
+        role: 'DRIVER',
+        orgId: negotiation.ride.orgId,
+      };
+      const acceptResult = await ridesService.acceptJoinRequest(
+        driverObj,
+        rideId,
+        joinRequest.id
+      );
+      trip = acceptResult.trip;
+      booking = acceptResult.booking;
+    } else {
+      trip = await prisma.trip.findUnique({
+        where: { rideId },
+        include: {
+          ride: {
+            include: {
+              vehicle: true,
+              driver: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+              bookings: {
+                include: {
+                  passenger: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
     return {
-      message: 'Negotiation accepted',
-      agreedFare: updated.offers[0].amount,
+      message: 'Negotiation accepted and trip confirmed',
+      agreedFare,
       negotiation: updated,
+      trip,
+      booking,
     };
   }
 

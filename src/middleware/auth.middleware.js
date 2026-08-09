@@ -1,6 +1,30 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/prisma');
 
+// Short TTL in-memory user authentication cache (30 seconds) to avoid database hammering
+const userAuthCache = new Map();
+const USER_CACHE_TTL = 30 * 1000;
+
+async function getCachedUser(userId) {
+  const now = Date.now();
+  const cached = userAuthCache.get(userId);
+  if (cached && now - cached.timestamp < USER_CACHE_TTL) {
+    return cached.user;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, orgId: true, verificationStatus: true },
+  });
+
+  if (user) {
+    userAuthCache.set(userId, { timestamp: now, user });
+  } else {
+    userAuthCache.delete(userId);
+  }
+  return user;
+}
+
 // Middleware to protect standard API routes using a JWT access token
 async function authenticateToken(req, res, next) {
   // Step 1: Read token from Authorization header or URL query parameter
@@ -25,11 +49,8 @@ async function authenticateToken(req, res, next) {
       return res.status(401).json({ message: 'Invalid token type for this route' });
     }
 
-    // Step 4: Verify that user still exists in database and remains APPROVED by admin
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, role: true, orgId: true, verificationStatus: true },
-    });
+    // Step 4: Verify that user still exists in database and remains APPROVED by admin (cached)
+    const user = await getCachedUser(decoded.id);
 
     if (!user) {
       return res.status(401).json({ message: 'User account no longer exists' });
@@ -87,4 +108,6 @@ async function authenticatePendingToken(req, res, next) {
 module.exports = {
   authenticateToken,
   authenticatePendingToken,
+  getCachedUser,
+};
 };

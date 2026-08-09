@@ -332,10 +332,10 @@ model TripPassenger {
   createdAt     DateTime      @default(now())
 
   tripId String
-  trip   Trip   @relation(fields: [tripId], references: [id])
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   passengerId String
-  passenger   User   @relation(fields: [passengerId], references: [id])
+  passenger   User   @relation(fields: [passengerId], references: [id], onDelete: Cascade)
 
   @@unique([tripId, passengerId])
   @@index([tripId])
@@ -349,7 +349,7 @@ model TripLocation {
   recordedAt DateTime @default(now())
 
   tripId String
-  trip   Trip   @relation(fields: [tripId], references: [id])
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   @@index([tripId])
 }
@@ -360,10 +360,10 @@ model Message {
   createdAt DateTime @default(now())
 
   tripId String
-  trip   Trip   @relation(fields: [tripId], references: [id])
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   senderId String
-  sender   User   @relation(fields: [senderId], references: [id])
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([tripId])
 }
@@ -375,7 +375,7 @@ model CallLog {
   durationSec Int?
 
   tripId String
-  trip   Trip   @relation(fields: [tripId], references: [id])
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   callerId String
   caller   User   @relation("CallerLogs", fields: [callerId], references: [id])
@@ -402,7 +402,7 @@ model Payment {
   booking   Booking? @relation(fields: [bookingId], references: [id])
 
   tripId String?
-  trip   Trip?   @relation(fields: [tripId], references: [id])
+  trip   Trip?   @relation(fields: [tripId], references: [id], onDelete: SetNull)
 
   walletTransaction WalletTransaction?
 
@@ -466,5 +466,5 @@ model FareBreakdown {
   finalPerRider Decimal @db.Decimal(10, 2)
 
   tripId String @unique
-  trip   Trip   @relation(fields: [tripId], references: [id])
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 }

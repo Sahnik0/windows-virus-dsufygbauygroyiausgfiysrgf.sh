@@ -102,15 +102,28 @@ class NegotiationsController {
       if (io) {
         const tracking = io.of('/tracking');
         const rideId = req.params.id;
+        const passengerId = result.negotiation?.passengerId;
+        const driverId = result.trip?.driverId || result.negotiation?.ride?.driverId;
+        const tripId = result.trip?.id;
+
         const payload = {
           rideId,
           negotiationId: req.params.negotiationId,
           agreedFare: result.agreedFare,
-          passengerId: result.negotiation?.passengerId,
+          passengerId,
+          trip: result.trip,
         };
         tracking.to(`ride:${rideId}`).emit('negotiation:accepted', payload);
-        if (result.negotiation?.passengerId) tracking.to(`user:${result.negotiation.passengerId}`).emit('negotiation:accepted', payload);
-        tracking.to(`user:${req.user.id}`).emit('negotiation:accepted', payload);
+        tracking.to(`ride:${rideId}`).emit('ride:accepted', payload);
+        if (tripId) tracking.to(`trip:${tripId}`).emit('ride:accepted', payload);
+        if (passengerId) {
+          tracking.to(`user:${passengerId}`).emit('negotiation:accepted', payload);
+          tracking.to(`user:${passengerId}`).emit('ride:accepted', payload);
+        }
+        if (driverId) {
+          tracking.to(`user:${driverId}`).emit('negotiation:accepted', payload);
+          tracking.to(`user:${driverId}`).emit('ride:accepted', payload);
+        }
       }
       res.status(200).json(result);
     } catch (error) {
