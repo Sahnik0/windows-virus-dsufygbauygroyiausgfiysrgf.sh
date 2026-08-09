@@ -357,6 +357,27 @@ class RidesService {
 
     const passengerId = currentUser.id;
 
+    // Prevent duplicate active join requests for the same passenger and ride
+    const existingRequest = await prisma.joinRequest.findFirst({
+      where: {
+        rideId,
+        passengerId,
+        status: { in: ['PENDING', 'ACCEPTED'] },
+      },
+    });
+
+    if (existingRequest) {
+      if (existingRequest.status === 'ACCEPTED') {
+        const error = new Error('You already have an accepted booking for this ride');
+        error.statusCode = 400;
+        throw error;
+      } else {
+        const error = new Error('A join request for this ride is already pending approval from the driver');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
     // Price Agreement Check: Verify fare matches listed price or an active/accepted negotiation
     let negotiationId = null;
     const isListedPrice = Number(agreedFare) === Number(ride.farePerSeat);
@@ -368,16 +389,26 @@ class RidesService {
           passengerId,
           status: { in: ['ACCEPTED', 'OPEN'] },
         },
+        orderBy: { updatedAt: 'desc' },
         include: {
-          offers: { orderBy: { createdAt: 'desc' }, take: 1 },
+          offers: { orderBy: { createdAt: 'desc' } },
         },
       });
 
-      if (
-        !negotiation ||
-        !negotiation.offers[0] ||
-        Number(negotiation.offers[0].amount) !== Number(agreedFare)
-      ) {
+      if (!negotiation || !negotiation.offers || negotiation.offers.length === 0) {
+        const error = new Error(
+          'Join request agreed fare does not match listed price and no price negotiation exists at this fare'
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Check if agreedFare matches ANY offer in this negotiation, OR if negotiation status is ACCEPTED
+      const hasMatchingOffer = negotiation.offers.some(
+        (o) => Math.abs(Number(o.amount) - Number(agreedFare)) < 0.01
+      );
+
+      if (!hasMatchingOffer && negotiation.status !== 'ACCEPTED') {
         const error = new Error(
           'Join request agreed fare does not match listed price and no price negotiation exists at this fare'
         );
@@ -491,43 +522,60 @@ class RidesService {
     }
 
     // Atomic transaction for accepting request and creating Booking & Trip
-    return await prisma.$transaction(async (tx) => {
-      const currentRide = await tx.ride.findUnique({ where: { id: rideId } });
+    return await prisma.$transaction(
+      async (tx) => {
+        // Re-check join request status inside transaction to prevent race conditions & duplicate bookings
+        const txRequest = await tx.joinRequest.findUnique({ where: { id: requestId } });
 
-      if (currentRide.availableSeats < request.seatsRequested) {
-        const error = new Error('Insufficient seats available to accept this request');
-        error.statusCode = 400;
-        throw error;
-      }
+        if (!txRequest || txRequest.status !== 'PENDING') {
+          const error = new Error(`Join request is already ${txRequest?.status?.toLowerCase() || 'processed'}`);
+          error.statusCode = 400;
+          throw error;
+        }
 
-      const newSeats = currentRide.availableSeats - request.seatsRequested;
-      const newRideStatus = newSeats === 0 ? 'ACTIVE' : currentRide.status;
+        const existingBooking = await tx.booking.findUnique({ where: { requestId } });
+        if (existingBooking) {
+          const error = new Error('A booking has already been created for this join request');
+          error.statusCode = 400;
+          throw error;
+        }
 
-      // 1. Update ride available seats and status
-      await tx.ride.update({
-        where: { id: rideId },
-        data: {
-          availableSeats: newSeats,
-          status: newRideStatus,
-        },
-      });
+        const currentRide = await tx.ride.findUnique({ where: { id: rideId } });
 
-      // 2. Mark join request ACCEPTED
-      const updatedRequest = await tx.joinRequest.update({
-        where: { id: requestId },
-        data: { status: 'ACCEPTED' },
-      });
+        if (!currentRide || currentRide.availableSeats < request.seatsRequested) {
+          const error = new Error('Insufficient seats available to accept this request');
+          error.statusCode = 400;
+          throw error;
+        }
 
-      // 3. Create Booking record
-      const booking = await tx.booking.create({
-        data: {
-          rideId,
-          passengerId: request.passengerId,
-          requestId: requestId,
-          seatsBooked: request.seatsRequested,
-          totalFare: request.agreedFare,
-        },
-      });
+        const newSeats = currentRide.availableSeats - request.seatsRequested;
+        const newRideStatus = newSeats === 0 ? 'ACTIVE' : currentRide.status;
+
+        // 1. Update ride available seats and status
+        await tx.ride.update({
+          where: { id: rideId },
+          data: {
+            availableSeats: newSeats,
+            status: newRideStatus,
+          },
+        });
+
+        // 2. Mark join request ACCEPTED
+        const updatedRequest = await tx.joinRequest.update({
+          where: { id: requestId },
+          data: { status: 'ACCEPTED' },
+        });
+
+        // 3. Create Booking record
+        const booking = await tx.booking.create({
+          data: {
+            rideId,
+            passengerId: request.passengerId,
+            requestId: requestId,
+            seatsBooked: request.seatsRequested,
+            totalFare: request.agreedFare,
+          },
+        });
 
       // 4. Create or reuse active Trip record (RIDE_BOOKED state)
       let trip = await tx.trip.findUnique({
@@ -600,7 +648,9 @@ class RidesService {
         },
         joinRequest: updatedRequest,
       };
-    });
+    },
+    { maxWait: 10000, timeout: 20000 }
+    );
   }
 
   // Declines a join request

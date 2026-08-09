@@ -24,6 +24,28 @@ class PaymentsController {
     }
   }
 
+  // Verifies Razorpay HMAC signature for trip payments
+  async verifyTripPayment(req, res, next) {
+    try {
+      const result = await paymentsService.verifyTripPayment(
+        req.user,
+        req.params.tripId,
+        req.body
+      );
+      const io = req.app.get('io');
+      if (io) {
+        const tracking = io.of('/tracking');
+        const tripId = req.params.tripId;
+        const payload = { tripId, payment: result.payment, trip: result.trip };
+        tracking.to(`trip:${tripId}`).emit('payment:updated', payload);
+        tracking.to(`user:${req.user.id}`).emit('payment:updated', payload);
+      }
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Receives and verifies Razorpay webhook notifications
   async handleWebhook(req, res, next) {
     try {

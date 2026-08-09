@@ -2,7 +2,7 @@ const express = require('express');
 const paymentsController = require('./payments.controller');
 const { authenticateToken } = require('../../middleware/auth.middleware');
 const validate = require('../../middleware/validate.middleware');
-const { processPaymentSchema } = require('./payments.validation');
+const { processPaymentSchema, verifyPaymentSchema } = require('./payments.validation');
 
 const router = express.Router();
 
@@ -14,7 +14,15 @@ router.post(
   paymentsController.processTripPayment
 );
 
-// 2. Razorpay Webhook listener endpoint
+// 2. Verify Razorpay signature for trip payment (CARD, UPI)
+router.post(
+  '/trips/:tripId/verify',
+  authenticateToken,
+  validate(verifyPaymentSchema),
+  paymentsController.verifyTripPayment
+);
+
+// 3. Razorpay Webhook listener endpoint
 router.post(
   '/webhook',
   express.raw({ type: 'application/json' }),

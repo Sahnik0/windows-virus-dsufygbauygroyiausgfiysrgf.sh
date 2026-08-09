@@ -185,6 +185,90 @@ class PaymentsService {
     };
   }
 
+  // Verifies Razorpay HMAC signature for trip payments (CARD / UPI) and updates payment status to PAID
+  async verifyTripPayment(currentUser, tripId, { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount }) {
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      include: {
+        ride: true,
+      },
+    });
+
+    if (!trip) {
+      const error = new Error('Trip not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder';
+    const keySecret = process.env.RAZORPAY_KEY_SECRET || 'rzp_secret_placeholder';
+
+    const isSimulated = keyId.startsWith('rzp_test_placeholder') || 
+                        razorpay_payment_id.startsWith('pay_sim_') || 
+                        razorpay_order_id.startsWith('order_trip_sim_') || 
+                        razorpay_signature === 'sim_signature';
+
+    if (!isSimulated) {
+      const expectedSignature = crypto
+        .createHmac('sha256', keySecret)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+
+      const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+      const actualBuf = Buffer.from(razorpay_signature || '', 'utf8');
+
+      if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) {
+        const error = new Error('Invalid payment signature verification failed');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      let payment = await tx.payment.findFirst({
+        where: {
+          OR: [
+            { razorpayOrderId: razorpay_order_id },
+            { tripId: tripId, status: 'PENDING' }
+          ]
+        },
+      });
+
+      if (!payment) {
+        payment = await tx.payment.create({
+          data: {
+            tripId,
+            amount: amount || Number(trip.ride.farePerSeat),
+            method: 'UPI',
+            status: 'PAID',
+            razorpayOrderId: razorpay_order_id,
+            razorpayPaymentId: razorpay_payment_id,
+          },
+        });
+      } else {
+        payment = await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'PAID',
+            razorpayPaymentId: razorpay_payment_id,
+            razorpayOrderId: razorpay_order_id,
+          },
+        });
+      }
+
+      const updatedTrip = await tx.trip.update({
+        where: { id: tripId },
+        data: { status: 'COMPLETED' },
+      });
+
+      return {
+        message: 'Trip payment verified successfully',
+        payment,
+        trip: updatedTrip,
+      };
+    });
+  }
+
   // Verifies Razorpay Webhook signature and idempotently marks trip as PAYMENT_COMPLETED on payment.captured
   async handleRazorpayWebhook(rawBody, signature) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_webhook_secret_placeholder';

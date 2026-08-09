@@ -128,7 +128,7 @@ class NegotiationsService {
     });
   }
 
-  // Lists negotiations for a ride (Driver sees all, Passenger sees their own)
+  // Lists negotiations for a ride (Driver sees all open, Passenger sees their own open/accepted)
   async getRideNegotiations(currentUser, rideId) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
 
@@ -140,11 +140,13 @@ class NegotiationsService {
 
     const isDriver = ride.driverId === currentUser.id || currentUser.role === 'SUPER_ADMIN';
 
-    const where = { rideId, status: 'OPEN' };
+    const where = { rideId };
 
-    // If caller is NOT the driver, filter strictly by passenger's own ID
-    if (!isDriver) {
+    if (isDriver) {
+      where.status = 'OPEN';
+    } else {
       where.passengerId = currentUser.id;
+      where.status = { in: ['OPEN', 'ACCEPTED'] };
     }
 
     const negotiations = await prisma.negotiation.findMany({
